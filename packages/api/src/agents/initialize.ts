@@ -395,6 +395,8 @@ export async function initializeAgent(
     _modelOptions as Record<string, unknown>,
   );
 
+  const summarizationThreshold = endpointOption?.summarizationThreshold;
+
   const provider = agent.provider;
   agent.endpoint = provider;
 
@@ -929,9 +931,10 @@ export async function initializeAgent(
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
     maxContextTokens:
-      maxContextTokens != null && maxContextTokens > 0
+      summarizationThreshold ??
+      (maxContextTokens != null && maxContextTokens > 0
         ? maxContextTokens
-        : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO))),
+        : Math.max(1024, Math.round(baseContextTokens * (1 - DEFAULT_RESERVE_RATIO)))),
     primedCodeFiles,
   };
 

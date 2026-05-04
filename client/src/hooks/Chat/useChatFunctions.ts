@@ -245,6 +245,14 @@ export default function useChatFunctions({
     } else {
       endpointOption.key = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     }
+
+    const summarizationThresholdDefault = localStorage.getItem('summarizationThresholdDefault');
+    if (summarizationThresholdDefault !== 'true') {
+      const summarizationThreshold = localStorage.getItem('summarizationThreshold');
+      if (summarizationThreshold) {
+        endpointOption.summarizationThreshold = Number(summarizationThreshold);
+      }
+    }
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {

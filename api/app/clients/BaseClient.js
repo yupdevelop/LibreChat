@@ -31,6 +31,14 @@ const TextStream = require('./TextStream');
 const db = require('~/models');
 
 class BaseClient {
+  get shouldSummarize() {
+    return this._shouldSummarize || (typeof this.options?.summarizationThreshold === 'number' && this.options.summarizationThreshold > 0);
+  }
+
+  set shouldSummarize(value) {
+    this._shouldSummarize = value;
+  }
+
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
     this.sender = options.sender ?? 'AI';

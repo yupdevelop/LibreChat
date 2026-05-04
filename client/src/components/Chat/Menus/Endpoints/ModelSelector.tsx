@@ -2,8 +2,6 @@ import React, { useMemo, useState, useEffect } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { Settings2 } from 'lucide-react';
 import { Slider, Switch, TooltipAnchor } from '@librechat/client';
-import { useRecoilCallback } from 'recoil';
-import store from '~/store';
 import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import {
@@ -27,16 +25,6 @@ function SummarizationThresholdPopover() {
   const [isDefault, setIsDefault] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
 
-  const updateConversations = useRecoilCallback(({ snapshot, set }) => async (val: number | undefined) => {
-    const keys = await snapshot.getPromise(store.conversationKeysAtom);
-    for (const key of keys) {
-      const convo = await snapshot.getPromise(store.conversationByIndex(key));
-      if (convo) {
-        set(store.conversationByIndex(key), { ...convo, maxContextTokens: val });
-      }
-    }
-  },[]);
-
   useEffect(() => {
     const stored = localStorage.getItem('summarizationThreshold');
     const storedDefault = localStorage.getItem('summarizationThresholdDefault');
@@ -44,20 +32,17 @@ function SummarizationThresholdPopover() {
     const initDefault = storedDefault !== null ? storedDefault === 'true' : true;
     setValue(initValue);
     setIsDefault(initDefault);
-    updateConversations(initDefault ? undefined : initValue);
-  }, [updateConversations]);
+  }, []);
 
   const handleValueChange = (newVals: number[]) => {
     const val = newVals[0];
     setValue(val);
     localStorage.setItem('summarizationThreshold', val.toString());
-    updateConversations(val);
   };
 
   const handleDefaultChange = (checked: boolean) => {
     setIsDefault(checked);
     localStorage.setItem('summarizationThresholdDefault', checked.toString());
-    updateConversations(checked ? undefined : value);
   };
 
   return (
@@ -98,7 +83,7 @@ function SummarizationThresholdPopover() {
                 <Slider
                   value={[value]}
                   min={0}
-                  max={256000}
+                  max={262144}
                   step={4096}
                   onValueChange={handleValueChange}
                   className="flex h-4 w-full"

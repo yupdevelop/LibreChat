@@ -977,6 +977,7 @@ export const tQueryParamsSchema = tConversationSchema
     instructions: true,
     /** @endpoints openAI, google, anthropic */
     fileTokenLimit: true,
+    summarizationThreshold: true,
   })
   .merge(
     z.object({
@@ -1067,6 +1068,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   maxContextTokens: true,
+  summarizationThreshold: true,
 });
 
 export const googleSchema = googleBaseSchema
@@ -1129,6 +1131,7 @@ const assistantBaseSchema = tConversationSchema.pick({
   greeting: true,
   spec: true,
   append_current_datetime: true,
+  summarizationThreshold: true,
 });
 
 export const assistantSchema = assistantBaseSchema
@@ -1163,6 +1166,7 @@ const compactAssistantBaseSchema = tConversationSchema.pick({
   iconURL: true,
   greeting: true,
   spec: true,
+  summarizationThreshold: true,
 });
 
 export const compactAssistantSchema = compactAssistantBaseSchema
@@ -1184,6 +1188,7 @@ export const agentsBaseSchema = tConversationSchema.pick({
   iconURL: true,
   greeting: true,
   maxContextTokens: true,
+  summarizationThreshold: true,
 });
 
 export const agentsSchema = agentsBaseSchema
@@ -1247,6 +1252,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   web_search: true,
   disableStreaming: true,
   fileTokenLimit: true,
+  summarizationThreshold: true,
 });
 
 export const openAISchema = openAIBaseSchema
@@ -1296,6 +1302,7 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   fileTokenLimit: true,
   stop: true,
   stream: true,
+  summarizationThreshold: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema
@@ -1322,6 +1329,7 @@ export const compactAgentsBaseSchema = tConversationSchema.pick({
   agent_id: true,
   instructions: true,
   additional_instructions: true,
+  summarizationThreshold: true,
 });
 
 export const compactAgentsSchema = compactAgentsBaseSchema
