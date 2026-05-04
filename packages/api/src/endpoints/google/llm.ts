@@ -233,8 +233,11 @@ export function getGoogleConfig(
    * For Vertex AI, top-level `includeThoughts` is still required because
    * `@librechat/agents/langchain/google-common`'s `formatGenerationConfig` reads it separately
    * from `thinkingConfig` — they serve different purposes in the request pipeline.
+   *
+   * Note: Gemma models do not support thinking features and should be excluded.
    */
   const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
+  const isGemmaModel = /^gemma-/i.test(modelName);
 
   if (isGemini3Plus && thinking) {
     const thinkingConfig: GoogleThinkingConfig = {
@@ -250,7 +253,7 @@ export function getGoogleConfig(
       (llmConfig as { thinkingConfig?: GoogleThinkingConfig }).thinkingConfig = thinkingConfig;
       (llmConfig as VertexAIClientOptions).includeThoughts = true;
     }
-  } else if (!isGemini3Plus) {
+  } else if (!isGemini3Plus && !isGemmaModel) {
     const shouldEnableThinking =
       thinking && thinkingBudget != null && (thinkingBudget > 0 || thinkingBudget === -1);
 
