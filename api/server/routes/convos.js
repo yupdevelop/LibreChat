@@ -55,6 +55,16 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/folders', async (req, res) => {
+  try {
+    const folders = await db.getConvoFolders(req.user.id);
+    res.status(200).json(folders);
+  } catch (error) {
+    logger.error('Error fetching conversation folders', error);
+    res.status(500).send('Error fetching conversation folders');
+  }
+});
+
 router.get('/:conversationId', async (req, res) => {
   const { conversationId } = req.params;
   const convo = await db.getConvo(req.user.id, conversationId);
@@ -231,21 +241,6 @@ router.post('/update', validateConvoAccess, async (req, res) => {
 
 /** Maximum allowed length for folder names */
 const MAX_FOLDER_NAME_LENGTH = 100;
-
-/**
- * Lists all distinct folder names for the authenticated user.
- * @route GET /folders
- * @returns {string[]} 200 - Sorted array of folder names.
- */
-router.get('/folders', async (req, res) => {
-  try {
-    const folders = await db.getConvoFolders(req.user.id);
-    res.status(200).json(folders);
-  } catch (error) {
-    logger.error('Error fetching conversation folders', error);
-    res.status(500).send('Error fetching conversation folders');
-  }
-});
 
 /**
  * Moves a conversation into a folder, or removes it from any folder when
