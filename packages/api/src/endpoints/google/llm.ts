@@ -237,7 +237,7 @@ export function getGoogleConfig(
    * Note: Gemma models do not support thinking features and should be excluded.
    */
   const isGemini3Plus = /gemini-([3-9]|\d{2,})/i.test(modelName);
-  const isGemmaModel = /^gemma-/i.test(modelName);
+  const isGemmaModel = /gemma-/i.test(modelName);
 
   if (isGemini3Plus && thinking) {
     const thinkingConfig: GoogleThinkingConfig = {
