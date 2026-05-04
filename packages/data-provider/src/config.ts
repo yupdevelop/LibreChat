@@ -55,6 +55,7 @@ export const excludedKeys = new Set([
   'files',
   'spec',
   'disableParams',
+  'folder',
 ]);
 
 export enum SettingsViews {

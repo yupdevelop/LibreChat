@@ -1,8 +1,9 @@
 import React, { useState, useMemo, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
-import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon } from '@librechat/client';
-import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon, TrashIcon } from '@librechat/client';
+import { useGenerationsByLatest, useLocalize, useAuthContext } from '~/hooks';
+import { useMessagesOperations } from '~/Providers';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
@@ -124,6 +125,7 @@ const HoverButtons = ({
   handleFeedback,
 }: THoverButtons) => {
   const localize = useLocalize();
+  const { token } = useAuthContext();
   const [isCopied, setIsCopied] = useState(false);
   const [TextToSpeech] = useRecoilState<boolean>(store.textToSpeech);
 
@@ -158,11 +160,106 @@ const HoverButtons = ({
     return null;
   }
 
+  const { getMessages, setMessages } = useMessagesOperations();
   const { isCreatedByUser, error } = message;
+
+  const handleDelete = async () => {
+    if (!conversation) {
+      return;
+    }
+    try {
+      const currentMessages = getMessages() || [];
+      let userMessage = message;
+
+      if (!message.isCreatedByUser) {
+        const parent = currentMessages.find((m) => m.messageId === message.parentMessageId);
+        if (parent) {
+          userMessage = parent;
+        }
+      }
+
+      const idsToDelete = new Set<string>([userMessage.messageId]);
+      const assistantResponses = currentMessages.filter(
+        (m) => m.parentMessageId === userMessage.messageId,
+      );
+      assistantResponses.forEach((r) => idsToDelete.add(r.messageId));
+
+      const newParentId = userMessage.parentMessageId;
+      const orphans = currentMessages.filter(
+        (m) => idsToDelete.has(m.parentMessageId ?? '') && !idsToDelete.has(m.messageId),
+      );
+
+      const newMessages = currentMessages
+        .filter((m) => !idsToDelete.has(m.messageId))
+        .map((m) => {
+          if (orphans.some((o) => o.messageId === m.messageId)) {
+            return { ...m, parentMessageId: newParentId };
+          }
+          return m;
+        });
+
+      setMessages(newMessages);
+
+      await Promise.all(
+        orphans.map((o) =>
+          fetch(`/api/messages/${conversation.conversationId}/${o.messageId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ parentMessageId: newParentId }),
+          }),
+        ),
+      );
+
+      await Promise.all(
+        Array.from(idsToDelete).map((id) =>
+          fetch(`/api/messages/${conversation.conversationId}/${id}`, {
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+          }),
+        ),
+      );
+    } catch (err) {
+      console.error('Error deleting message turn:', err);
+    }
+  };
+
+  const isLastMessagePair = () => {
+    const currentMessages = getMessages() || [];
+    if (currentMessages.length === 0) return true;
+
+    let userMessageCount = 0;
+    currentMessages.forEach((msg) => {
+      if (msg.isCreatedByUser) {
+        const hasResponse = currentMessages.some((m) => m.parentMessageId === msg.messageId);
+        if (hasResponse) {
+          userMessageCount++;
+        }
+      }
+    });
+
+    return userMessageCount <= 1;
+  };
+
+  const canDelete = !isLastMessagePair();
 
   if (error === true) {
     return (
       <div className="visible flex justify-center self-end lg:justify-start">
+        {canDelete && (
+          <HoverButton
+            onClick={handleDelete}
+            title={localize('com_ui_delete')}
+            icon={<TrashIcon className="h-[18px] w-[18px]" />}
+            isDisabled={isSubmitting}
+            isLast={isLast}
+          />
+        )}
         {regenerateEnabled && (
           <HoverButton
             onClick={regenerate}
@@ -267,6 +364,17 @@ const HoverButtons = ({
           icon={<ContinueIcon className="w-19 h-19 -rotate-180" />}
           isLast={isLast}
           className="active"
+        />
+      )}
+
+      {/* Delete Button */}
+      {canDelete && (
+        <HoverButton
+          onClick={handleDelete}
+          title={localize('com_ui_delete')}
+          icon={<TrashIcon className="h-[18px] w-[18px]" />}
+          isDisabled={isSubmitting}
+          isLast={isLast}
         />
       )}
     </div>
