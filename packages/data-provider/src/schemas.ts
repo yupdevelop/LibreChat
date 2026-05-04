@@ -858,6 +858,8 @@ export const tConversationSchema = z.object({
   expiredAt: z.string().nullable().optional(),
   /* file token limits */
   fileTokenLimit: coerceNumber.optional(),
+  /* summarization override */
+  summarizationThreshold: z.number().optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */

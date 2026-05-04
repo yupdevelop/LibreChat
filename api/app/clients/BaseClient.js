@@ -367,8 +367,8 @@ class BaseClient {
     // start with 3 tokens for the label after all messages have been counted.
     let currentTokenCount = 3;
     const instructionsTokenCount = instructions?.tokenCount ?? 0;
-    let remainingContextTokens =
-      (maxContextTokens ?? this.maxContextTokens) - instructionsTokenCount;
+    const effectiveMaxTokens = this.options?.summarizationThreshold ?? maxContextTokens ?? this.maxContextTokens;
+    let remainingContextTokens = effectiveMaxTokens - instructionsTokenCount;
     const messages = [..._messages];
 
     const context = [];

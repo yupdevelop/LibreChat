@@ -72,6 +72,7 @@ export type TEndpointOption = Pick<
   | 'examples'
   // Context
   | 'context'
+  | 'summarizationThreshold'
 > & {
   // Fields specific to endpoint options that don't exist on TConversation
   modelDisplayLabel?: string;

@@ -1,5 +1,9 @@
-import React, { useMemo } from 'react';
-import { TooltipAnchor } from '@librechat/client';
+import React, { useMemo, useState, useEffect } from 'react';
+import * as Popover from '@radix-ui/react-popover';
+import { Settings2 } from 'lucide-react';
+import { Slider, Switch, TooltipAnchor } from '@librechat/client';
+import { useRecoilCallback } from 'recoil';
+import store from '~/store';
 import { getConfigDefaults } from 'librechat-data-provider';
 import type { ModelSelectorProps } from '~/common';
 import {
@@ -16,6 +20,97 @@ import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
 
 const defaultInterface = getConfigDefaults().interface;
+
+function SummarizationThresholdPopover() {
+  const localize = useLocalize();
+  const [value, setValue] = useState(4096);
+  const [isDefault, setIsDefault] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const updateConversations = useRecoilCallback(({ snapshot, set }) => async (val: number | undefined) => {
+    const keys = await snapshot.getPromise(store.conversationKeysAtom);
+    for (const key of keys) {
+      const convo = await snapshot.getPromise(store.conversationByIndex(key));
+      if (convo) {
+        set(store.conversationByIndex(key), { ...convo, maxContextTokens: val });
+      }
+    }
+  },[]);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('summarizationThreshold');
+    const storedDefault = localStorage.getItem('summarizationThresholdDefault');
+    const initValue = stored ? Number(stored) : 4096;
+    const initDefault = storedDefault !== null ? storedDefault === 'true' : true;
+    setValue(initValue);
+    setIsDefault(initDefault);
+    updateConversations(initDefault ? undefined : initValue);
+  }, [updateConversations]);
+
+  const handleValueChange = (newVals: number[]) => {
+    const val = newVals[0];
+    setValue(val);
+    localStorage.setItem('summarizationThreshold', val.toString());
+    updateConversations(val);
+  };
+
+  const handleDefaultChange = (checked: boolean) => {
+    setIsDefault(checked);
+    localStorage.setItem('summarizationThresholdDefault', checked.toString());
+    updateConversations(checked ? undefined : value);
+  };
+
+  return (
+    <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
+      <Popover.Trigger asChild>
+        <TooltipAnchor
+          description={localize('com_ui_summarization_threshold')}
+          role="button"
+          tabIndex={0}
+          aria-label={localize('com_ui_summarization_threshold')}
+          className="inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary disabled:pointer-events-none disabled:opacity-50 radix-state-open:bg-surface-tertiary"
+        >
+          <Settings2 className="icon-sm" aria-hidden="true" />
+        </TooltipAnchor>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          sideOffset={8}
+          className="z-[100] w-64 rounded-md border border-border-light bg-white p-4 shadow-xl dark:bg-gray-700 dark:text-white"
+        >
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                {localize('com_ui_use_default')}
+              </label>
+              <Switch
+                checked={isDefault}
+                onCheckedChange={handleDefaultChange}
+                className="shrink-0"
+              />
+            </div>
+            {!isDefault && (
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-between text-sm">
+                  <span>{localize('com_ui_threshold')}:</span>
+                  <span className="font-semibold">{value}</span>
+                </div>
+                <Slider
+                  value={[value]}
+                  min={0}
+                  max={256000}
+                  step={4096}
+                  onValueChange={handleValueChange}
+                  className="flex h-4 w-full"
+                />
+              </div>
+            )}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
 
 function ModelSelectorContent() {
   const localize = useLocalize();
@@ -82,9 +177,10 @@ function ModelSelectorContent() {
   );
 
   return (
-    <div className="relative flex w-full max-w-md flex-col items-center gap-2">
-      <Menu
-        values={selectedValues}
+    <div className="flex w-full items-center gap-2">
+      <div className="relative flex w-full max-w-md flex-col items-center gap-2">
+        <Menu
+          values={selectedValues}
         onValuesChange={(values: Record<string, any>) => {
           setSelectedValues({
             endpoint: values.endpoint || '',
@@ -113,12 +209,14 @@ function ModelSelectorContent() {
           </>
         )}
       </Menu>
-      <DialogManager
-        keyDialogOpen={keyDialogOpen}
-        onOpenChange={onOpenChange}
-        endpointsConfig={endpointsConfig || {}}
-        keyDialogEndpoint={keyDialogEndpoint || undefined}
-      />
+        <DialogManager
+          keyDialogOpen={keyDialogOpen}
+          onOpenChange={onOpenChange}
+          endpointsConfig={endpointsConfig || {}}
+          keyDialogEndpoint={keyDialogEndpoint || undefined}
+        />
+      </div>
+      <SummarizationThresholdPopover />
     </div>
   );
 }

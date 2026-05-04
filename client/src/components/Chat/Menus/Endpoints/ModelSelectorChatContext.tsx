@@ -32,7 +32,18 @@ export function ModelSelectorChatProvider({ children }: { children: React.ReactN
   const newConversationRef = useRef(nextNewConversation);
   newConversationRef.current = nextNewConversation;
   const newConversation = useCallback<ConvoGenerator>(
-    (params) => newConversationRef.current(params),
+    (params) => {
+      const isDefault = localStorage.getItem('summarizationThresholdDefault') !== 'false';
+      const val = localStorage.getItem('summarizationThreshold');
+      const summarizationThreshold = !isDefault && val ? Number(val) : undefined;
+      return newConversationRef.current({
+        ...params,
+        template: {
+          ...(params?.template || {}),
+          ...(summarizationThreshold !== undefined ? { summarizationThreshold } : {}),
+        },
+      });
+    },
     [],
   );
 
