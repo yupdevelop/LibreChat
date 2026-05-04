@@ -142,6 +142,65 @@ export type ConversationCursorData = {
   nextCursor?: string | null;
 };
 
+export type FolderGroup = [string, TConversation[]];
+export type FolderGroupedConversations = {
+  folders: FolderGroup[];
+  dateGrouped: GroupedConversations;
+};
+
+export const groupConversationsByFolders = (
+  conversations: Array<TConversation | null>,
+): FolderGroupedConversations => {
+  if (!Array.isArray(conversations)) {
+    return { folders: [], dateGrouped: [] };
+  }
+
+  const seenConversationIds = new Set();
+  const folderMap = new Map<string, TConversation[]>();
+  const nonFolderedConversations: TConversation[] = [];
+
+  conversations.forEach((conversation) => {
+    if (!conversation || seenConversationIds.has(conversation.conversationId)) {
+      return;
+    }
+    seenConversationIds.add(conversation.conversationId);
+
+    // Exclude archived conversations from folder grouping
+    if (conversation.isArchived) {
+      nonFolderedConversations.push(conversation);
+      return;
+    }
+
+    // Group conversations with folders
+    if (conversation.folder && conversation.folder.trim()) {
+      const folderName = conversation.folder.trim();
+      if (!folderMap.has(folderName)) {
+        folderMap.set(folderName, []);
+      }
+      folderMap.get(folderName)!.push(conversation);
+    } else {
+      // Conversations without folders go to date grouping
+      nonFolderedConversations.push(conversation);
+    }
+  });
+
+  // Sort folders alphabetically
+  const sortedFolders = Array.from(folderMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([folderName, convos]) => {
+      // Sort conversations within folder by updatedAt descending
+      const sortedConvos = convos.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      return [folderName, sortedConvos] as FolderGroup;
+    });
+
+  // Group non-foldered conversations by date
+  const dateGrouped = groupConversationsByDate(nonFolderedConversations);
+
+  return { folders: sortedFolders, dateGrouped };
+};
+
 // === InfiniteData helpers for cursor-based convo queries ===
 
 export function findConversationInInfinite(

@@ -172,6 +172,7 @@ export default function Conversation({
     renameHandler: handleRename,
     isActiveConvo,
     conversationId,
+    currentFolder: conversation.folder ?? null,
     isPopoverActive,
     setIsPopoverActive: handlePopoverOpenChange,
     isShiftHeld: isActiveConvo ? isShiftHeld : false,

@@ -1,16 +1,17 @@
 import { useMemo, memo, type FC, useCallback, useEffect, useRef } from 'react';
 import throttle from 'lodash/throttle';
 import { ChevronDown } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
 import { Spinner, useMediaQuery } from '@librechat/client';
 import { List, AutoSizer, CellMeasurer, CellMeasurerCache } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import { useLocalize, TranslationKeys, useFavorites, useShowMarketplace } from '~/hooks';
 import FavoritesList from '~/components/Nav/Favorites/FavoritesList';
 import { useActiveJobs } from '~/data-provider';
-import { groupConversationsByDate, cn } from '~/utils';
+import { groupConversationsByDate, groupConversationsByFolders, cn } from '~/utils';
 import Convo from './Convo';
 import store from '~/store';
+import type { FolderGroup } from '~/utils';
 
 export type CellPosition = {
   columnIndex: number;
@@ -95,6 +96,31 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle }) => {
 
 ChatsHeader.displayName = 'ChatsHeader';
 
+interface FolderHeaderProps {
+  folderName: string;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+/** Collapsible header for folder sections */
+const FolderHeader: FC<FolderHeaderProps> = memo(({ folderName, isExpanded, onToggle }) => {
+  const localize = useLocalize();
+  return (
+    <button
+      onClick={onToggle}
+      className="group flex w-full items-center justify-between rounded-lg px-1 py-2 text-xs font-bold text-text-secondary outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black dark:focus-visible:ring-white"
+      type="button"
+    >
+      <span className="select-none truncate">{folderName}</span>
+      <ChevronDown
+        className={cn('h-3 w-3 flex-shrink-0 transition-transform duration-200', isExpanded ? 'rotate-180' : '')}
+      />
+    </button>
+  );
+});
+
+FolderHeader.displayName = 'FolderHeader';
+
 const DateLabel: FC<{ groupName: string; isFirst?: boolean }> = memo(({ groupName, isFirst }) => {
   const localize = useLocalize();
   return (
@@ -115,6 +141,7 @@ DateLabel.displayName = 'DateLabel';
 type FlattenedItem =
   | { type: 'favorites' }
   | { type: 'chats-header' }
+  | { type: 'folder-header'; folderName: string }
   | { type: 'header'; groupName: string }
   | { type: 'convo'; convo: TConversation }
   | { type: 'loading' };
@@ -163,10 +190,22 @@ const Conversations: FC<ConversationsProps> = ({
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
+  const folderExpandedState = useRecoilValue(store.folderExpandedState);
+  const setFolderExpandedState = useSetRecoilState(store.folderExpandedState);
   const { favorites, isLoading: isFavoritesLoading } = useFavorites();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
   const convoHeight = isSmallScreen ? 44 : 34;
   const showAgentMarketplace = useShowMarketplace();
+
+  const toggleFolderExpanded = useCallback(
+    (folderName: string) => {
+      setFolderExpandedState((prev) => ({
+        ...prev,
+        [folderName]: !prev[folderName],
+      }));
+    },
+    [setFolderExpandedState],
+  );
 
   const favoritesContentKeyRef = useRef('');
 
@@ -188,8 +227,8 @@ const Conversations: FC<ConversationsProps> = ({
     [rawConversations],
   );
 
-  const groupedConversations = useMemo(
-    () => groupConversationsByDate(filteredConversations),
+  const folderGroupedConversations = useMemo(
+    () => groupConversationsByFolders(filteredConversations),
     [filteredConversations],
   );
 
@@ -202,7 +241,17 @@ const Conversations: FC<ConversationsProps> = ({
     items.push({ type: 'chats-header' });
 
     if (isChatsExpanded) {
-      groupedConversations.forEach(([groupName, convos]) => {
+      // Render folder sections first
+      folderGroupedConversations.folders.forEach(([folderName, convos]) => {
+        items.push({ type: 'folder-header', folderName });
+        const isExpanded = folderExpandedState[folderName] !== false; // Default to expanded
+        if (isExpanded) {
+          items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
+        }
+      });
+
+      // Render date-grouped conversations (non-foldered)
+      folderGroupedConversations.dateGrouped.forEach(([groupName, convos]) => {
         items.push({ type: 'header', groupName });
         items.push(...convos.map((convo) => ({ type: 'convo' as const, convo })));
       });
@@ -212,7 +261,7 @@ const Conversations: FC<ConversationsProps> = ({
       }
     }
     return items;
-  }, [groupedConversations, isLoading, isChatsExpanded, shouldShowFavorites]);
+  }, [folderGroupedConversations, isLoading, isChatsExpanded, shouldShowFavorites, folderExpandedState]);
 
   // Store flattenedItems in a ref for keyMapper to access without recreating cache
   const flattenedItemsRef = useRef(flattenedItems);
@@ -234,6 +283,9 @@ const Conversations: FC<ConversationsProps> = ({
           }
           if (item.type === 'chats-header') {
             return 'chats-header';
+          }
+          if (item.type === 'folder-header') {
+            return `folder-header-${item.folderName}`;
           }
           if (item.type === 'header') {
             return `header-${item.groupName}`;
@@ -308,6 +360,18 @@ const Conversations: FC<ConversationsProps> = ({
         );
       }
 
+      if (item.type === 'folder-header') {
+        return (
+          <MeasuredRow key={key} {...rowProps}>
+            <FolderHeader
+              folderName={item.folderName}
+              isExpanded={folderExpandedState[item.folderName] !== false}
+              onToggle={() => toggleFolderExpanded(item.folderName)}
+            />
+          </MeasuredRow>
+        );
+      }
+
       if (item.type === 'header') {
         // First date header index depends on whether favorites row is included
         // With favorites: [favorites, chats-header, first-header] → index 2
@@ -346,6 +410,8 @@ const Conversations: FC<ConversationsProps> = ({
       setIsChatsExpanded,
       shouldShowFavorites,
       activeJobIds,
+      folderExpandedState,
+      toggleFolderExpanded,
     ],
   );
 

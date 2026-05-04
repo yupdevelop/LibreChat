@@ -48,6 +48,7 @@ export interface ConversationMethods {
   }>;
   getConvo(user: string, conversationId: string): Promise<IConversation | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
+  getConvoFolders(user: string): Promise<string[]>;
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
@@ -500,6 +501,25 @@ export function createConversationMethods(
     }
   }
 
+  /**
+   * Returns the sorted, distinct folder names assigned to the user's
+   * non-archived conversations.
+   */
+  async function getConvoFolders(user: string): Promise<string[]> {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const folders = (await Conversation.distinct('folder', {
+        user,
+        folder: { $nin: [null, ''] },
+        $or: [{ isArchived: { $ne: true } }, { isArchived: { $exists: false } }],
+      })) as string[];
+      return folders.sort((a, b) => a.localeCompare(b));
+    } catch (error) {
+      logger.error('[getConvoFolders] Error fetching folders', error);
+      throw new Error('Error fetching folders');
+    }
+  }
+
   return {
     getConvoFiles,
     searchConversation,
@@ -510,6 +530,7 @@ export function createConversationMethods(
     getConvosQueried,
     getConvo,
     getConvoTitle,
+    getConvoFolders,
     deleteConvos,
   };
 }

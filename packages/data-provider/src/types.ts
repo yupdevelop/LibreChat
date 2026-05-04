@@ -306,6 +306,15 @@ export type TArchiveConversationRequest = {
 
 export type TArchiveConversationResponse = TConversation;
 
+export type TMoveConversationFolderRequest = {
+  conversationId: string;
+  folder: string | null;
+};
+
+export type TMoveConversationFolderResponse = TConversation;
+
+export type TConversationFoldersResponse = string[];
+
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
 };

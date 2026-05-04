@@ -39,6 +39,25 @@ export const useUpdateConversationMutation = (
   );
 };
 
+export const useMoveConversationFolderMutation = (): UseMutationResult<
+  t.TMoveConversationFolderResponse,
+  unknown,
+  t.TMoveConversationFolderRequest,
+  unknown
+> => {
+  const queryClient = useQueryClient();
+  return useMutation(
+    (payload: t.TMoveConversationFolderRequest) => dataService.moveConversationFolder(payload),
+    {
+      onSuccess: (updatedConvo, payload) => {
+        queryClient.setQueryData([QueryKeys.conversation, payload.conversationId], updatedConvo);
+        updateConvoInAllQueries(queryClient, payload.conversationId, () => updatedConvo);
+        queryClient.invalidateQueries([QueryKeys.conversationFolders]);
+      },
+    },
+  );
+};
+
 export const useTagConversationMutation = (
   conversationId: string,
   options?: t.updateTagsInConvoOptions,

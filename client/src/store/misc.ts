@@ -64,6 +64,8 @@ const chatBadges = atomWithLocalStorage<Pick<BadgeItem, 'id'>[]>('chatBadges', [
   // { id: '2' },
 ]);
 
+const folderExpandedState = atomWithLocalStorage<Record<string, boolean>>('folderExpandedState', {});
+
 export default {
   hideBannerHint,
   messageAttachmentsMap,
@@ -71,4 +73,5 @@ export default {
   queriesEnabled,
   isEditingBadges,
   chatBadges,
+  folderExpandedState,
 };

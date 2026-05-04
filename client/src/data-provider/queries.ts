@@ -179,6 +179,20 @@ export const useConversationTagsQuery = (
   );
 };
 
+export const useConversationFoldersQuery = (
+  config?: UseQueryOptions<t.TConversationFoldersResponse>,
+): QueryObserverResult<t.TConversationFoldersResponse> => {
+  return useQuery<t.TConversationFoldersResponse>(
+    [QueryKeys.conversationFolders],
+    () => dataService.getConversationFolders(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      ...config,
+    },
+  );
+};
+
 /**
  * ASSISTANTS
  */

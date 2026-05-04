@@ -4,7 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { DropdownPopup, Spinner, useToastContext } from '@librechat/client';
-import { Ellipsis, Share2, CopyPlus, Archive, Pen, Trash } from 'lucide-react';
+import { Ellipsis, Share2, CopyPlus, Archive, Pen, Trash, FolderInput } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import type { TMessage } from 'librechat-data-provider';
 import {
@@ -16,6 +16,7 @@ import {
 import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { NotificationSeverity } from '~/common';
 import { useChatContext } from '~/Providers';
+import MoveToFolderDialog from './MoveToFolderDialog';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
 import { cn } from '~/utils';
@@ -23,6 +24,7 @@ import { cn } from '~/utils';
 function ConvoOptions({
   conversationId,
   title,
+  currentFolder,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -32,6 +34,7 @@ function ConvoOptions({
 }: {
   conversationId: string | null;
   title: string | null;
+  currentFolder?: string | null;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -53,8 +56,10 @@ function ConvoOptions({
   const menuId = useId();
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const folderButtonRef = useRef<HTMLButtonElement>(null);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [announcement, setAnnouncement] = useState('');
 
   const archiveConvoMutation = useArchiveConvoMutation();
@@ -183,6 +188,10 @@ function ConvoOptions({
     });
   }, [conversationId, duplicateConversation]);
 
+  const moveToFolderHandler = useCallback(() => {
+    setShowFolderDialog(true);
+  }, []);
+
   const dropdownItems = useMemo(
     () => [
       {
@@ -211,6 +220,16 @@ function ConvoOptions({
         ) : (
           <CopyPlus className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
         ),
+      },
+      {
+        label: localize('com_ui_move_to_folder'),
+        onClick: moveToFolderHandler,
+        icon: <FolderInput className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        ariaHasPopup: 'dialog' as const,
+        ariaControls: 'move-to-folder-dialog',
+        hideOnClick: false,
+        ref: folderButtonRef,
+        render: (props) => <button {...props} />,
       },
       {
         label: localize('com_ui_archive'),
@@ -244,6 +263,7 @@ function ConvoOptions({
       isDuplicateLoading,
       handleArchiveClick,
       handleDuplicateClick,
+      moveToFolderHandler,
     ],
   );
 
@@ -342,6 +362,16 @@ function ConvoOptions({
           setShowDeleteDialog={setShowDeleteDialog}
         />
       )}
+      {showFolderDialog && (
+        <MoveToFolderDialog
+          conversationId={conversationId ?? ''}
+          currentFolder={currentFolder ?? null}
+          open={showFolderDialog}
+          onOpenChange={setShowFolderDialog}
+          triggerRef={folderButtonRef}
+          onMoved={() => setIsPopoverActive(false)}
+        />
+      )}
     </>
   );
 }
@@ -350,6 +380,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
   return (
     prevProps.conversationId === nextProps.conversationId &&
     prevProps.title === nextProps.title &&
+    prevProps.currentFolder === nextProps.currentFolder &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld

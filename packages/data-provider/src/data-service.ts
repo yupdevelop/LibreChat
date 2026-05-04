@@ -764,6 +764,16 @@ export function archiveConversation(
   return request.post(endpoints.archiveConversation(), { arg: payload });
 }
 
+export function getConversationFolders(): Promise<t.TConversationFoldersResponse> {
+  return request.get(endpoints.conversationFolders());
+}
+
+export function moveConversationFolder(
+  payload: t.TMoveConversationFolderRequest,
+): Promise<t.TMoveConversationFolderResponse> {
+  return request.post(endpoints.moveConversationFolder(), { arg: payload });
+}
+
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
   return request.get(endpoints.genTitle(payload.conversationId));
 }

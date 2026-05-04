@@ -229,6 +229,63 @@ router.post('/update', validateConvoAccess, async (req, res) => {
   }
 });
 
+/** Maximum allowed length for folder names */
+const MAX_FOLDER_NAME_LENGTH = 100;
+
+/**
+ * Lists all distinct folder names for the authenticated user.
+ * @route GET /folders
+ * @returns {string[]} 200 - Sorted array of folder names.
+ */
+router.get('/folders', async (req, res) => {
+  try {
+    const folders = await db.getConvoFolders(req.user.id);
+    res.status(200).json(folders);
+  } catch (error) {
+    logger.error('Error fetching conversation folders', error);
+    res.status(500).send('Error fetching conversation folders');
+  }
+});
+
+/**
+ * Moves a conversation into a folder, or removes it from any folder when
+ * `folder` is `null`/empty.
+ * @route POST /folder
+ * @param {string} req.body.arg.conversationId - The conversation ID to update.
+ * @param {string|null} req.body.arg.folder - The folder name or null to clear.
+ * @returns {object} 200 - The updated conversation object.
+ */
+router.post('/folder', validateConvoAccess, async (req, res) => {
+  const { conversationId, folder } = req.body?.arg ?? {};
+
+  if (!conversationId) {
+    return res.status(400).json({ error: 'conversationId is required' });
+  }
+
+  if (folder !== null && typeof folder !== 'string') {
+    return res.status(400).json({ error: 'folder must be a string or null' });
+  }
+
+  const sanitizedFolder =
+    folder === null ? null : folder.trim().slice(0, MAX_FOLDER_NAME_LENGTH) || null;
+
+  try {
+    const dbResponse = await db.saveConvo(
+      {
+        userId: req?.user?.id,
+        isTemporary: req?.body?.isTemporary,
+        interfaceConfig: req?.config?.interfaceConfig,
+      },
+      { conversationId, folder: sanitizedFolder },
+      { context: `POST /api/convos/folder ${conversationId}` },
+    );
+    res.status(200).json(dbResponse);
+  } catch (error) {
+    logger.error('Error updating conversation folder', error);
+    res.status(500).send('Error updating conversation folder');
+  }
+});
+
 const { importIpLimiter, importUserLimiter } = createImportLimiters();
 /** Fork and duplicate share one rate-limit budget (same "clone" operation class) */
 const { forkIpLimiter, forkUserLimiter } = createForkLimiters();

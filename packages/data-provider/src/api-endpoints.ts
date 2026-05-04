@@ -116,6 +116,10 @@ export const updateConversation = () => `${conversationsRoot}/update`;
 
 export const archiveConversation = () => `${conversationsRoot}/archive`;
 
+export const conversationFolders = () => `${conversationsRoot}/folders`;
+
+export const moveConversationFolder = () => `${conversationsRoot}/folder`;
+
 export const deleteConversation = () => `${conversationsRoot}`;
 
 export const deleteAllConversation = () => `${conversationsRoot}/all`;
