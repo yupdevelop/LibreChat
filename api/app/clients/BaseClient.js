@@ -944,6 +944,7 @@ class BaseClient {
     mapMethod = null,
     mapCondition = null,
     summary = false,
+    mutateSummary = true,
   }) {
     if (!messages || messages.length === 0) {
       return [];
@@ -973,21 +974,25 @@ class BaseClient {
       if (summary) {
         const summaryBlock = BaseClient.findSummaryContentBlock(message);
         if (summaryBlock) {
-          const summaryText = BaseClient.getSummaryText(summaryBlock);
-          resolved = {
-            ...message,
-            role: 'system',
-            content: [{ type: ContentTypes.TEXT, text: summaryText }],
-            tokenCount: summaryBlock.tokenCount,
-          };
+          if (mutateSummary) {
+            const summaryText = BaseClient.getSummaryText(summaryBlock);
+            resolved = {
+              ...message,
+              role: 'system',
+              content: [{ type: ContentTypes.TEXT, text: summaryText }],
+              tokenCount: summaryBlock.tokenCount,
+            };
+          }
           hasSummary = true;
         } else if (message.summary) {
-          resolved = {
-            ...message,
-            role: 'system',
-            content: [{ type: ContentTypes.TEXT, text: message.summary }],
-            tokenCount: message.summaryTokenCount ?? message.tokenCount,
-          };
+          if (mutateSummary) {
+            resolved = {
+              ...message,
+              role: 'system',
+              content: [{ type: ContentTypes.TEXT, text: message.summary }],
+              tokenCount: message.summaryTokenCount ?? message.tokenCount,
+            };
+          }
           hasSummary = true;
         }
       }

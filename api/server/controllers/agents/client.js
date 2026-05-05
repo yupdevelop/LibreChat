@@ -238,6 +238,7 @@ class AgentClient extends BaseClient {
       messages,
       parentMessageId,
       summary: this.shouldSummarize,
+      mutateSummary: false,
       mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
       mapCondition: (message) => message.addedConvo === true,
     });
