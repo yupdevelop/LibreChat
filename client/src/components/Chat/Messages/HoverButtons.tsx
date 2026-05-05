@@ -3,7 +3,7 @@ import { useRecoilState } from 'recoil';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { EditIcon, Clipboard, CheckMark, ContinueIcon, RegenerateIcon, TrashIcon } from '@librechat/client';
 import { useGenerationsByLatest, useLocalize, useAuthContext } from '~/hooks';
-import { useMessagesOperations } from '~/Providers';
+import { useMessagesOperations, useMessagesState } from '~/Providers';
 import { Fork } from '~/components/Conversations';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
@@ -161,14 +161,39 @@ const HoverButtons = ({
   }
 
   const { getMessages, setMessages } = useMessagesOperations();
+  const { setLatestMessage } = useMessagesState();
   const { isCreatedByUser, error } = message;
 
   const handleDelete = async () => {
     if (!conversation) {
       return;
     }
+    let currentMessagesSnapshot: TMessage[] = [];
     try {
       const currentMessages = getMessages() || [];
+      currentMessagesSnapshot = [...currentMessages];
+      const findNearestSurvivingLatest = (messages: TMessage[], startId?: string | null) => {
+        let currentId = startId ?? null;
+        const visited = new Set<string>();
+
+        while (currentId) {
+          if (visited.has(currentId)) {
+            break;
+          }
+          visited.add(currentId);
+
+          const candidate = messages.find((m) => m.messageId === currentId);
+          if (candidate) {
+            return candidate;
+          }
+
+          const deletedMessage = currentMessagesSnapshot.find((m) => m.messageId === currentId);
+          currentId = deletedMessage?.parentMessageId ?? null;
+        }
+
+        return messages[messages.length - 1] ?? null;
+      };
+
       let userMessage = message;
 
       if (!message.isCreatedByUser) {
@@ -200,6 +225,15 @@ const HoverButtons = ({
 
       setMessages(newMessages);
 
+      const shouldRepointLatest =
+        latestMessageId != null &&
+        (idsToDelete.has(latestMessageId) || idsToDelete.has(message.messageId));
+
+      if (shouldRepointLatest) {
+        const nextLatest = findNearestSurvivingLatest(newMessages, latestMessageId);
+        setLatestMessage(nextLatest);
+      }
+
       await Promise.all(
         orphans.map((o) =>
           fetch(`/api/messages/${conversation.conversationId}/${o.messageId}`, {
@@ -225,6 +259,9 @@ const HoverButtons = ({
         ),
       );
     } catch (err) {
+      if (currentMessagesSnapshot.length > 0) {
+        setMessages(currentMessagesSnapshot);
+      }
       console.error('Error deleting message turn:', err);
     }
   };

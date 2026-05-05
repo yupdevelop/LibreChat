@@ -9,6 +9,9 @@ import type {
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 import { MessageContext, SearchContext } from '~/Providers';
+import { TrashIcon } from '@librechat/client';
+import { useAuthContext, useLocalize } from '~/hooks';
+import { useMessagesOperations } from '~/Providers';
 import { EditTextPart, EmptyText } from './Parts';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import MemoryArtifacts from './MemoryArtifacts';
@@ -121,8 +124,47 @@ const ContentParts = memo(function ContentParts({
   isCreatedByUser,
   isLatestMessage,
 }: ContentPartsProps) {
+  const localize = useLocalize();
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+
+  const { getMessages, setMessages } = useMessagesOperations();
+  const { token } = useAuthContext();
+
+  const handleDeletePart = useCallback(async (partIndex: number) => {
+    if (!conversationId || !messageId) return;
+
+    try {
+      const currentMessages = getMessages() ||[];
+      const message = currentMessages.find((m) => m.messageId === messageId);
+      if (!message || !message.content || !Array.isArray(message.content)) return;
+      if (partIndex < 0 || partIndex >= message.content.length) return;
+
+      const newContent = [...message.content];
+      newContent.splice(partIndex, 1);
+
+      const previousMessages = currentMessages;
+      const newMessages = currentMessages.map((m) => 
+        m.messageId === messageId ? { ...m, content: newContent } : m
+      );
+      setMessages(newMessages);
+
+      const res = await fetch(`/api/messages/${conversationId}/${messageId}/parts/${partIndex}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        setMessages(previousMessages);
+        throw new Error('Failed to delete message part');
+      }
+    } catch (err) {
+      console.error('Error deleting message part:', err);
+    }
+  },[conversationId, messageId, getMessages, setMessages, token]);
 
   /**
    * Interim skill cards — rendered in a separate slot ABOVE the Parts
@@ -185,20 +227,31 @@ const ContentParts = memo(function ContentParts({
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
       const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
-        <PartWithContext
-          key={`provider-${messageId}-${idx}`}
-          idx={idx}
-          part={part}
-          isLast={isLast}
-          messageId={messageId}
-          isLastPart={isLastPart}
-          conversationId={conversationId}
-          isLatestMessage={isLatestMessage}
-          isCreatedByUser={isCreatedByUser}
-          nextType={content?.[idx + 1]?.type}
-          isSubmitting={effectiveIsSubmitting}
-          partAttachments={attachmentMap[toolCallId]}
-        />
+        <div key={`part-wrapper-${messageId}-${idx}`} className="group/part relative flex flex-col">
+          <PartWithContext
+            idx={idx}
+            part={part}
+            isLast={isLast}
+            messageId={messageId}
+            isLastPart={isLastPart}
+            conversationId={conversationId}
+            isLatestMessage={isLatestMessage}
+            isCreatedByUser={isCreatedByUser}
+            nextType={content?.[idx + 1]?.type}
+            isSubmitting={effectiveIsSubmitting}
+            partAttachments={attachmentMap[toolCallId]}
+          />
+          {!effectiveIsSubmitting && (
+            <button
+              onClick={() => handleDeletePart(idx)}
+              className="absolute right-1 top-1 z-10 rounded p-1 text-text-tertiary bg-surface-primary/50 opacity-0 transition-opacity hover:bg-surface-hover hover:text-text-primary focus-visible:opacity-100 group-hover/part:opacity-100"
+              title={localize('com_ui_delete')}
+              type="button"
+            >
+              <TrashIcon className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       );
     },
     [
@@ -210,6 +263,8 @@ const ContentParts = memo(function ContentParts({
       isLast,
       isLatestMessage,
       messageId,
+      handleDeletePart,
+      localize,
     ],
   );
 

@@ -407,6 +407,42 @@ router.put('/:conversationId/:messageId/feedback', validateMessageReq, async (re
   }
 });
 
+router.delete('/:conversationId/:messageId/parts/:index', validateMessageReq, async (req, res) => {
+  try {
+    const { conversationId, messageId, index } = req.params;
+    const partIndex = parseInt(index, 10);
+    
+    if (isNaN(partIndex) || partIndex < 0) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
+    const message = (
+      await db.getMessages({ conversationId, messageId }, 'content')
+    )?.[0];
+    
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const existingContent = message.content;
+    if (!Array.isArray(existingContent) || partIndex >= existingContent.length) {
+      return res.status(400).json({ error: 'Invalid index' });
+    }
+
+    const updatedContent = [...existingContent];
+    updatedContent.splice(partIndex, 1);
+
+    const result = await db.updateMessage(req?.user?.id, {
+      messageId,
+      content: updatedContent,
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    logger.error('Error deleting message part:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
