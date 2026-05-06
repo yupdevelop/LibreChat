@@ -42,6 +42,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { MESSAGE_UPDATE_INTERVAL } from '~/common';
 import { useLiveAnnouncer } from '~/Providers';
 import store from '~/store';
+import { latestMessageFamily } from '~/store/families';
 
 type TSyncData = {
   sync: boolean;
@@ -180,6 +181,7 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const setLatestMessage = useSetRecoilState(latestMessageFamily(0));
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -490,8 +492,11 @@ export default function useEventHandlers({
       } = submission;
 
       try {
+        if (responseMessage) {
+          setLatestMessage(responseMessage);
+        }
+
         // Handle early abort - aborted during tool loading before any messages saved
-        // Don't update conversation state, just reset UI and stay on new chat
         if ((data as Record<string, unknown>).earlyAbort) {
           console.log(
             '[finalHandler] Early abort detected - no messages saved, staying on new chat',

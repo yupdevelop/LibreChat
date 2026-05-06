@@ -253,6 +253,8 @@ export default function useChatFunctions({
         endpointOption.summarizationThreshold = Number(summarizationThreshold);
       }
     }
+    const summarizationStrategy = localStorage.getItem('summarizationStrategy') || 'summarize';
+    endpointOption.summarizationStrategy = summarizationStrategy as 'summarize' | 'truncate';
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {

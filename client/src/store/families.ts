@@ -37,7 +37,7 @@ const submissionKeysAtom = atom<(string | number)[]>({
   default: [],
 });
 
-const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
+export const latestMessageFamily = atomFamily<TMessage | null, string | number | null>({
   key: 'latestMessageByIndex',
   default: null,
   effects: [

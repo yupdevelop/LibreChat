@@ -16,6 +16,8 @@ import { getSelectedIcon, getDisplayValue } from './utils';
 import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
+import { useRecoilValue } from 'recoil';
+import { latestMessageFamily } from '~/store/families';
 
 const defaultInterface = getConfigDefaults().interface;
 
@@ -23,15 +25,22 @@ function SummarizationThresholdPopover() {
   const localize = useLocalize();
   const [value, setValue] = useState(4096);
   const [isDefault, setIsDefault] = useState(true);
+  const [strategy, setStrategy] = useState<'summarize' | 'truncate'>('summarize');
   const [isOpen, setIsOpen] = useState(false);
+
+  const latestMessage = useRecoilValue(latestMessageFamily(0));
+  const promptTokens = latestMessage?.promptTokens ?? 0;
 
   useEffect(() => {
     const stored = localStorage.getItem('summarizationThreshold');
     const storedDefault = localStorage.getItem('summarizationThresholdDefault');
+    const storedStrategy = localStorage.getItem('summarizationStrategy');
     const initValue = stored ? Number(stored) : 4096;
     const initDefault = storedDefault !== null ? storedDefault === 'true' : true;
+    const initStrategy = storedStrategy === 'truncate' ? 'truncate' : 'summarize';
     setValue(initValue);
     setIsDefault(initDefault);
+    setStrategy(initStrategy);
   }, []);
 
   const handleValueChange = (newVals: number[]) => {
@@ -43,6 +52,12 @@ function SummarizationThresholdPopover() {
   const handleDefaultChange = (checked: boolean) => {
     setIsDefault(checked);
     localStorage.setItem('summarizationThresholdDefault', checked.toString());
+  };
+
+  const handleStrategyChange = (checked: boolean) => {
+    const newStrategy = checked ? 'truncate' : 'summarize';
+    setStrategy(newStrategy);
+    localStorage.setItem('summarizationStrategy', newStrategy);
   };
 
   return (
@@ -76,6 +91,24 @@ function SummarizationThresholdPopover() {
             </div>
             {!isDefault && (
               <div className="flex flex-col gap-3">
+                {promptTokens > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex justify-between text-xs text-text-secondary">
+                      <span>{localize('com_ui_current_context', {
+                        count: promptTokens.toLocaleString(),
+                        threshold: value.toLocaleString(),
+                      })}</span>
+                    </div>
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-surface-tertiary">
+                      <div
+                        className={`h-full transition-all duration-500 ${
+                          promptTokens > value ? 'bg-red-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${Math.min((promptTokens / value) * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm">
                   <span>{localize('com_ui_threshold')}:</span>
                   <span className="font-semibold">{value}</span>
@@ -88,6 +121,19 @@ function SummarizationThresholdPopover() {
                   onValueChange={handleValueChange}
                   className="flex h-4 w-full"
                 />
+                <div className="flex items-center justify-between mt-2">
+                  <TooltipAnchor
+                    description={localize('com_ui_no_summarization_tooltip')}
+                    render={
+                      <span className="text-sm font-medium">{localize('com_ui_no_summarization')}</span>
+                    }
+                  />
+                  <Switch
+                    checked={strategy === 'truncate'}
+                    onCheckedChange={handleStrategyChange}
+                    className="shrink-0"
+                  />
+                </div>
               </div>
             )}
           </div>

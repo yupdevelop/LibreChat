@@ -95,6 +95,7 @@ export type TEndpointOption = Pick<
   agent?: Promise<Agent>;
   // Client-specific options
   clientOptions?: Record<string, unknown>;
+  summarizationStrategy?: 'summarize' | 'truncate';
 };
 
 export type TEphemeralAgent = {

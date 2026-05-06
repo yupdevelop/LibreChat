@@ -32,6 +32,7 @@ const db = require('~/models');
 
 class BaseClient {
   get shouldSummarize() {
+    if (this.options?.summarizationStrategy === 'truncate') return false;
     return this._shouldSummarize || (typeof this.options?.summarizationThreshold === 'number' && this.options.summarizationThreshold > 0);
   }
 
@@ -371,6 +372,10 @@ class BaseClient {
    *    `messagesToRefine` is an array of messages that were not added to the context because they would have exceeded the token limit.
    */
   async getMessagesWithinTokenLimit({ messages: _messages, maxContextTokens, instructions }) {
+    if (this.options?.summarizationStrategy === 'truncate') {
+      return this.getMessagesWithinTokenLimitPairwise({ messages: _messages, maxContextTokens, instructions });
+    }
+
     // Every reply is primed with <|start|>assistant<|message|>, so we
     // start with 3 tokens for the label after all messages have been counted.
     let currentTokenCount = 3;
@@ -411,6 +416,41 @@ class BaseClient {
       context: context.reverse(),
       remainingContextTokens,
       messagesToRefine: prunedMemory,
+    };
+  }
+
+  async getMessagesWithinTokenLimitPairwise({ messages: _messages, maxContextTokens, instructions }) {
+    const effectiveMaxTokens = this.options?.summarizationThreshold ?? maxContextTokens ?? this.maxContextTokens;
+    const instructionsTokenCount = instructions?.tokenCount ?? 0;
+    const messages = [..._messages];
+    
+    let totalTokens = 3 + instructionsTokenCount;
+    messages.forEach(msg => {
+      totalTokens += msg.tokenCount ?? 0;
+    });
+
+    while (totalTokens > effectiveMaxTokens && messages.length > 0) {
+      const firstMsg = messages[0];
+      const role = firstMsg.sender;
+      
+      if (role === 'User') {
+        const secondMsg = messages[1];
+        totalTokens -= (firstMsg.tokenCount ?? 0);
+        messages.shift();
+        if (secondMsg) {
+          totalTokens -= (secondMsg.tokenCount ?? 0);
+          messages.shift();
+        }
+      } else {
+        totalTokens -= (firstMsg.tokenCount ?? 0);
+        messages.shift();
+      }
+    }
+
+    return {
+      context: messages,
+      remainingContextTokens: effectiveMaxTokens - totalTokens,
+      messagesToRefine: [],
     };
   }
 
