@@ -860,6 +860,7 @@ export const tConversationSchema = z.object({
   fileTokenLimit: coerceNumber.optional(),
   /* summarization override */
   summarizationThreshold: z.number().optional(),
+  summarizationStrategy: z.enum(['summarize', 'truncate']).optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated Prefer `modelLabel` over `chatGptLabel` */
@@ -1330,6 +1331,7 @@ export const compactAgentsBaseSchema = tConversationSchema.pick({
   instructions: true,
   additional_instructions: true,
   summarizationThreshold: true,
+  summarizationStrategy: true,
 });
 
 export const compactAgentsSchema = compactAgentsBaseSchema

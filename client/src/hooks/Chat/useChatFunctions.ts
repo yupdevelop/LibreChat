@@ -220,11 +220,22 @@ export default function useChatFunctions({
     const iconURL = conversation?.iconURL;
     const defaultParamsEndpoint = getDefaultParamsEndpoint(endpointsConfig, endpoint);
 
+    let conversationForParse = conversation ?? {};
+    const summarizationThresholdDefault = localStorage.getItem('summarizationThresholdDefault');
+    if (summarizationThresholdDefault !== 'true') {
+      const summarizationThreshold = localStorage.getItem('summarizationThreshold');
+      if (summarizationThreshold) {
+        conversationForParse.summarizationThreshold = Number(summarizationThreshold);
+      }
+    }
+    const summarizationStrategy = localStorage.getItem('summarizationStrategy') || 'summarize';
+    conversationForParse.summarizationStrategy = summarizationStrategy as 'summarize' | 'truncate';
+
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
       endpoint: endpoint as EndpointSchemaKey,
       endpointType: endpointType as EndpointSchemaKey,
-      conversation: conversation ?? {},
+      conversation: conversationForParse,
       defaultParamsEndpoint,
     });
 
@@ -246,15 +257,6 @@ export default function useChatFunctions({
       endpointOption.key = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     }
 
-    const summarizationThresholdDefault = localStorage.getItem('summarizationThresholdDefault');
-    if (summarizationThresholdDefault !== 'true') {
-      const summarizationThreshold = localStorage.getItem('summarizationThreshold');
-      if (summarizationThreshold) {
-        endpointOption.summarizationThreshold = Number(summarizationThreshold);
-      }
-    }
-    const summarizationStrategy = localStorage.getItem('summarizationStrategy') || 'summarize';
-    endpointOption.summarizationStrategy = summarizationStrategy as 'summarize' | 'truncate';
     const responseSender = getSender({ model: conversation?.model, ...endpointOption });
 
     const currentMsg: TMessage = {

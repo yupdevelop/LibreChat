@@ -317,6 +317,10 @@ export function validateRequest(body: unknown): ChatCompletionValidationResult {
     return { valid: false, error: 'parent_message_id must be a string' };
   }
 
+  if (request.summarizationStrategy !== undefined && request.summarizationStrategy !== 'summarize' && request.summarizationStrategy !== 'truncate') {
+    return { valid: false, error: 'summarizationStrategy must be either "summarize" or "truncate"' };
+  }
+
   return { valid: true, request: request as unknown as ChatCompletionRequest };
 }
 

@@ -181,12 +181,13 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
-  const setLatestMessage = useSetRecoilState(latestMessageFamily(0));
   const navigate = useNavigate();
   const location = useLocation();
 
-  const lastAnnouncementTimeRef = useRef(Date.now());
   const { conversationId: paramId } = useParams();
+  const setLatestMessage = useSetRecoilState(latestMessageFamily(paramId ?? 0));
+
+  const lastAnnouncementTimeRef = useRef(Date.now());
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
@@ -369,10 +370,6 @@ export default function useEventHandlers({
       }
 
       setShowStopButton(true);
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'syncHandler: resetting latest message');
-        resetLatestMessage();
-      }
     },
     [
       queryClient,
@@ -381,7 +378,6 @@ export default function useEventHandlers({
       announcePolite,
       setConversation,
       setShowStopButton,
-      resetLatestMessage,
     ],
   );
 
@@ -463,10 +459,6 @@ export default function useEventHandlers({
         });
       }
 
-      if (resetLatestMessage) {
-        logger.log('latest_message', 'createdHandler: resetting latest message');
-        resetLatestMessage();
-      }
       scrollToEnd(() => setAbortScroll(false));
     },
     [
@@ -476,7 +468,6 @@ export default function useEventHandlers({
       isAddedRequest,
       announcePolite,
       setConversation,
-      resetLatestMessage,
       applyAgentTemplate,
     ],
   );
@@ -671,6 +662,7 @@ export default function useEventHandlers({
       location.pathname,
       applyAgentTemplate,
       attachmentHandler,
+      setLatestMessage,
     ],
   );
 

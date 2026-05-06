@@ -166,7 +166,9 @@ class AgentClient extends BaseClient {
     buffer.clear();
   }
 
-  setOptions(_options) {}
+  setOptions(options) {
+    this.options = Object.assign({}, this.options, options);
+  }
 
   /**
    * `AgentClient` is not opinionated about vision requests, so we don't do anything here
@@ -233,9 +235,19 @@ class AgentClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    let messagesToProcess = messages;
+    if (this.options?.summarizationStrategy === 'truncate') {
+      const { context } = await this.getMessagesWithinTokenLimitPairwise({
+        messages,
+        maxContextTokens: this.options?.summarizationThreshold ?? this.maxContextTokens,
+        instructions: null,
+      });
+      messagesToProcess = context;
+    }
+
     /** Always pass mapMethod; getMessagesForConversation applies it only to messages with addedConvo flag */
     const orderedMessages = this.constructor.getMessagesForConversation({
-      messages,
+      messages: messagesToProcess,
       parentMessageId,
       summary: this.shouldSummarize,
       mutateSummary: false,
@@ -983,7 +995,9 @@ class AgentClient extends BaseClient {
           customHandlers: this.options.eventHandlers,
           requestBody: config.configurable.requestBody,
           user: createSafeUser(this.options.req?.user),
-          summarizationConfig: appConfig?.summarization,
+          summarizationConfig: this.options?.summarizationStrategy === 'truncate' 
+            ? { ...appConfig?.summarization, enabled: false } 
+            : appConfig?.summarization,
           appConfig,
           tokenCounter,
         });

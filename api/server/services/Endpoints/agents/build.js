@@ -7,7 +7,7 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {
-  const { spec, iconURL, agent_id, summarizationThreshold, ...model_parameters } = parsedBody;
+  const { spec, iconURL, agent_id, summarizationThreshold, summarizationStrategy, ...model_parameters } = parsedBody;
   const agentPromise = loadAgent({
     req,
     spec,
@@ -29,6 +29,7 @@ const buildOptions = (req, endpoint, parsedBody, endpointType) => {
     agent_id,
     endpointType,
     summarizationThreshold,
+    summarizationStrategy,
     model_parameters,
     agent: agentPromise,
     addedConvo,

@@ -458,7 +458,9 @@ const OpenAIChatCompletionController = async (req, res) => {
       ...getSkillToolDeps(),
     };
 
-    const summarizationConfig = appConfig?.summarization;
+    const summarizationConfig = request.summarizationStrategy === 'truncate'
+      ? { ...appConfig?.summarization, enabled: false }
+      : appConfig?.summarization;
 
     const openaiMessages = convertMessages(request.messages);
 

@@ -91,6 +91,10 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     return { valid: false, error: 'previous_response_id must be a string' };
   }
 
+  if (request.summarizationStrategy !== undefined && request.summarizationStrategy !== 'summarize' && request.summarizationStrategy !== 'truncate') {
+    return { valid: false, error: 'summarizationStrategy must be either "summarize" or "truncate"' };
+  }
+
   return { valid: true, request: request as unknown as ResponseRequest };
 }
 

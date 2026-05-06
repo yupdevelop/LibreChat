@@ -292,7 +292,9 @@ const createResponse = async (req, res) => {
   const request = validation.request;
   const agentId = request.model;
   const isStreaming = request.stream === true;
-  const summarizationConfig = appConfig?.summarization;
+  const summarizationConfig = request.summarizationStrategy === 'truncate'
+    ? { ...appConfig?.summarization, enabled: false }
+    : appConfig?.summarization;
 
   // Look up the agent
   const agent = await db.getAgent({ id: agentId });

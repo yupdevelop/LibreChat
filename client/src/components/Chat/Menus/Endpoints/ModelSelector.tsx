@@ -17,18 +17,20 @@ import { CustomMenu as Menu } from './CustomMenu';
 import DialogManager from './DialogManager';
 import { useLocalize } from '~/hooks';
 import { useRecoilValue } from 'recoil';
+import { useParams } from 'react-router-dom';
 import { latestMessageFamily } from '~/store/families';
 
 const defaultInterface = getConfigDefaults().interface;
 
 function SummarizationThresholdPopover() {
   const localize = useLocalize();
+  const { conversationId } = useParams();
   const [value, setValue] = useState(4096);
   const [isDefault, setIsDefault] = useState(true);
   const [strategy, setStrategy] = useState<'summarize' | 'truncate'>('summarize');
   const [isOpen, setIsOpen] = useState(false);
 
-  const latestMessage = useRecoilValue(latestMessageFamily(0));
+  const latestMessage = useRecoilValue(latestMessageFamily(conversationId ?? 0));
   const promptTokens = latestMessage?.promptTokens ?? 0;
 
   useEffect(() => {
