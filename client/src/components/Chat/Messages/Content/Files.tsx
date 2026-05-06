@@ -1,10 +1,16 @@
 import { useMemo, useState, useCallback, memo } from 'react';
+import { useAuthContext } from '~/hooks';
+import { useMessagesOperations } from '~/Providers';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import FilePreviewDialog from './FilePreviewDialog';
 import Image from './Image';
 
 const Files = ({ message }: { message?: TMessage }) => {
+  const { token } = useAuthContext();
+  const { getMessages, setMessages } = useMessagesOperations();
+  const { conversationId } = message ?? {};
+
   const imageFiles = useMemo(() => {
     return message?.files?.filter((file) => file.type?.startsWith('image/')) || [];
   }, [message?.files]);
@@ -20,6 +26,40 @@ const Files = ({ message }: { message?: TMessage }) => {
       setSelectedFile(null);
     }
   }, []);
+
+  const handleDeleteImage = useCallback(async (fileId: string) => {
+    if (!conversationId || !message?.messageId) return;
+
+    try {
+      const currentMessages = getMessages() || [];
+      const updatedMessages = currentMessages.map((m) => {
+        if (m.messageId === message?.messageId) {
+          return {
+            ...m,
+            files: m.files?.filter((f) => f.file_id !== fileId),
+          };
+        }
+        return m;
+      });
+
+      setMessages(updatedMessages);
+
+      const res = await fetch(`/api/messages/${conversationId}/${message?.messageId}/files/${fileId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!res.ok) {
+        setMessages(currentMessages);
+        throw new Error('Failed to delete image');
+      }
+    } catch (err) {
+      console.error('Error deleting image:', err);
+    }
+  }, [conversationId, message?.messageId, getMessages, setMessages, token]);
 
   return (
     <>
@@ -39,6 +79,7 @@ const Files = ({ message }: { message?: TMessage }) => {
             height={file.height ?? 1920}
             width={file.width ?? 1080}
             altText={file.filename ?? 'Uploaded Image'}
+            onDelete={() => handleDeleteImage(file.file_id!)}
           />
         ))}
       <FilePreviewDialog

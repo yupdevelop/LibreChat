@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Skeleton } from '@librechat/client';
+import { Skeleton, TrashIcon } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
 import DialogImage from './DialogImage';
 import { cn } from '~/utils';
@@ -31,6 +31,7 @@ const Image = ({
   args,
   width,
   height,
+  onDelete,
 }: {
   imagePath: string;
   altText: string;
@@ -44,6 +45,7 @@ const Image = ({
   };
   width?: number;
   height?: number;
+  onDelete?: () => void;
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -131,6 +133,19 @@ const Image = ({
           )}
         />
       </button>
+      {onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          className="absolute right-2 top-2 z-20 rounded-full bg-surface-primary/80 p-1.5 text-text-tertiary transition-all hover:bg-surface-hover hover:text-text-danger opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          title="Delete image"
+          type="button"
+        >
+          <TrashIcon className="size-4" />
+        </button>
+      )}
       <DialogImage
         isOpen={isOpen}
         onOpenChange={setIsOpen}

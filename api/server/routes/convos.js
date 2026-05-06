@@ -239,8 +239,7 @@ router.post('/update', validateConvoAccess, async (req, res) => {
   }
 });
 
-/** Maximum allowed length for folder names */
-const MAX_FOLDER_NAME_LENGTH = 100;
+const { MAX_FOLDER_NAME_LENGTH } = require('librechat-data-provider');
 
 /**
  * Moves a conversation into a folder, or removes it from any folder when

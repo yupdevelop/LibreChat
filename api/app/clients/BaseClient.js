@@ -447,6 +447,20 @@ class BaseClient {
       }
     }
 
+    while (messages.length > 1 && messages[0]?.sender === 'System' && messages[1]?.sender !== 'User') {
+      messages.splice(1, 1);
+    }
+
+    while (messages.length > 0 && messages[0]?.sender !== 'User' && messages[0]?.sender !== 'System') {
+      messages.shift();
+    }
+
+    if (messages[0]?.sender === 'System') {
+      while (messages.length > 1 && messages[1]?.sender !== 'User') {
+        messages.splice(1, 1);
+      }
+    }
+
     return {
       context: messages,
       remainingContextTokens: effectiveMaxTokens - totalTokens,

@@ -443,6 +443,39 @@ router.delete('/:conversationId/:messageId/parts/:index', validateMessageReq, as
   }
 });
 
+router.delete('/:conversationId/:messageId/files/:fileId', validateMessageReq, async (req, res) => {
+  try {
+    const { conversationId, messageId, fileId } = req.params;
+
+    const message = (
+      await db.getMessages({ conversationId, messageId }, 'files')
+    )?.[0];
+
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const existingFiles = message.files;
+    if (!Array.isArray(existingFiles)) {
+      return res.status(400).json({ error: 'Message has no files' });
+    }
+
+    const updatedFiles = existingFiles.filter((f) => f.file_id !== fileId);
+    if (updatedFiles.length === existingFiles.length) {
+      return res.status(404).json({ error: 'File not found in message' });
+    }
+
+    const result = await db.updateMessage(req?.user?.id, {
+      messageId,
+      files: updatedFiles,
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    logger.error('Error deleting message file:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.delete('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;

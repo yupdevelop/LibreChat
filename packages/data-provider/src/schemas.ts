@@ -775,6 +775,8 @@ const DocumentType: z.ZodType<DocumentTypeValue> = z.lazy(() =>
   ]),
 );
 
+export const MAX_FOLDER_NAME_LENGTH = 100;
+
 export const tConversationSchema = z.object({
   conversationId: z.string().nullable(),
   endpoint: eModelEndpointSchema.nullable(),
@@ -812,7 +814,7 @@ export const tConversationSchema = z.object({
   examples: z.array(tExampleSchema).optional(),
   /* DB */
   tags: z.array(z.string()).optional(),
-  folder: z.string().nullable().optional(),
+  folder: z.string().max(MAX_FOLDER_NAME_LENGTH).nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   /* Files */
