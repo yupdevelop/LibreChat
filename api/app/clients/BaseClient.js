@@ -412,8 +412,27 @@ class BaseClient {
     const prunedMemory = messages;
     remainingContextTokens -= currentTokenCount;
 
+    let resultContext = context.reverse();
+
+    const isSystem = (msg) => msg?.role === 'system' || msg?.sender === 'System';
+    const isUser = (msg) => msg?.isCreatedByUser || msg?.role === 'user' || msg?.sender === 'User' || msg?.sender?.toLowerCase() === 'user';
+    const isAssistant = (msg) => !isUser(msg) && !isSystem(msg);
+
+    for (let i = 0; i < resultContext.length; ) {
+      if (isUser(resultContext[i])) {
+        break;
+      }
+      if (isAssistant(resultContext[i])) {
+        const removed = resultContext.splice(i, 1)[0];
+        prunedMemory.push(removed);
+        remainingContextTokens += removed.tokenCount || 0;
+      } else {
+        i++;
+      }
+    }
+
     return {
-      context: context.reverse(),
+      context: resultContext,
       remainingContextTokens,
       messagesToRefine: prunedMemory,
     };
@@ -429,15 +448,18 @@ class BaseClient {
       totalTokens += msg.tokenCount ?? 0;
     });
 
+    const isSystem = (msg) => msg?.role === 'system' || msg?.sender === 'System';
+    const isUser = (msg) => msg?.isCreatedByUser || msg?.role === 'user' || msg?.sender === 'User' || msg?.sender?.toLowerCase() === 'user';
+    const isAssistant = (msg) => !isUser(msg) && !isSystem(msg);
+
     while (totalTokens > effectiveMaxTokens && messages.length > 0) {
       const firstMsg = messages[0];
-      const role = firstMsg.sender;
       
-      if (role === 'User') {
+      if (isUser(firstMsg)) {
         const secondMsg = messages[1];
         totalTokens -= (firstMsg.tokenCount ?? 0);
         messages.shift();
-        if (secondMsg) {
+        if (secondMsg && isAssistant(secondMsg)) {
           totalTokens -= (secondMsg.tokenCount ?? 0);
           messages.shift();
         }
@@ -447,24 +469,21 @@ class BaseClient {
       }
     }
 
-    while (messages.length > 1 && messages[0]?.sender === 'System' && messages[1]?.sender !== 'User') {
-      messages.splice(1, 1);
-    }
-
-    while (messages.length > 0 && messages[0]?.sender !== 'User' && messages[0]?.sender !== 'System') {
-      messages.shift();
-    }
-
-    if (messages[0]?.sender === 'System') {
-      while (messages.length > 1 && messages[1]?.sender !== 'User') {
-        messages.splice(1, 1);
+    for (let i = 0; i < messages.length; ) {
+      if (isUser(messages[i])) {
+        break;
+      }
+      if (isAssistant(messages[i])) {
+        messages.splice(i, 1);
+      } else {
+        i++;
       }
     }
 
     return {
       context: messages,
       remainingContextTokens: effectiveMaxTokens - totalTokens,
-      messagesToRefine: [],
+      messagesToRefine:[],
     };
   }
 
@@ -1064,6 +1083,22 @@ class BaseClient {
     }
 
     orderedMessages.reverse();
+
+    const isSystem = (msg) => msg?.role === 'system' || msg?.sender === 'System';
+    const isUser = (msg) => msg?.isCreatedByUser || msg?.role === 'user' || msg?.sender === 'User' || msg?.sender?.toLowerCase() === 'user';
+    const isAssistant = (msg) => !isUser(msg) && !isSystem(msg);
+
+    for (let i = 0; i < orderedMessages.length; ) {
+      if (isUser(orderedMessages[i])) {
+        break;
+      }
+      if (isAssistant(orderedMessages[i])) {
+        orderedMessages.splice(i, 1);
+      } else {
+        i++;
+      }
+    }
+
     return orderedMessages;
   }
 
