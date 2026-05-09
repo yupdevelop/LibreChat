@@ -133,6 +133,26 @@ const userSchema = new Schema<IUser>(
           type: Boolean,
           default: true,
         },
+        vectorMemories: {
+          type: Boolean,
+          default: true,
+        },
+        embeddingProvider: {
+          type: String,
+          default: 'google',
+        },
+        embeddingModel: {
+          type: String,
+          default: 'text-embedding-004',
+        },
+        extractionProvider: {
+          type: String,
+          default: '',
+        },
+        extractionModel: {
+          type: String,
+          default: '',
+        },
       },
       default: {},
     },

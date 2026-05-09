@@ -7,6 +7,7 @@ export interface IMemoryEntry extends Document {
   value: string;
   tokenCount?: number;
   updated_at?: Date;
+  embedding?: number[];
   tenantId?: string;
 }
 
@@ -17,6 +18,7 @@ export interface IMemoryEntryLean {
   value: string;
   tokenCount?: number;
   updated_at?: Date;
+  embedding?: number[];
   __v?: number;
 }
 
@@ -26,6 +28,7 @@ export interface SetMemoryParams {
   key: string;
   value: string;
   tokenCount?: number;
+  embedding?: number[];
 }
 
 export interface DeleteMemoryParams {
@@ -35,6 +38,8 @@ export interface DeleteMemoryParams {
 
 export interface GetFormattedMemoriesParams {
   userId: string | Types.ObjectId;
+  queryEmbedding?: number[];
+  topK?: number;
 }
 
 // Result interfaces

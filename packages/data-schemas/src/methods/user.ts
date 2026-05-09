@@ -240,6 +240,36 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
   }
 
   /**
+   * Update vector memory preferences for a user.
+   * Handles the edge case where the personalization object doesn't exist.
+   */
+  async function updateVectorMemoryPreferences(
+    userId: string,
+    preferences: {
+      vectorMemories: boolean;
+      embeddingProvider: string;
+      embeddingModel: string;
+      extractionProvider: string;
+      extractionModel: string;
+    },
+  ): Promise<IUser | null> {
+    const User = mongoose.models.User;
+    const updateOperation = {
+      $set: {
+        'personalization.vectorMemories': preferences.vectorMemories,
+        'personalization.embeddingProvider': preferences.embeddingProvider,
+        'personalization.embeddingModel': preferences.embeddingModel,
+        'personalization.extractionProvider': preferences.extractionProvider,
+        'personalization.extractionModel': preferences.extractionModel,
+      },
+    };
+    return await User.findByIdAndUpdate(userId, updateOperation, {
+      new: true,
+      runValidators: true,
+    }).lean<IUser>();
+  }
+
+  /**
    * Search for users by pattern matching on name, email, or username (case-insensitive)
    * @param searchPattern - The pattern to search for
    * @param limit - Maximum number of results to return
@@ -357,6 +387,7 @@ export function createUserMethods(mongoose: typeof import('mongoose')) {
     deleteUserById,
     updateUserPlugins,
     toggleUserMemories,
+    updateVectorMemoryPreferences,
   };
 }
 

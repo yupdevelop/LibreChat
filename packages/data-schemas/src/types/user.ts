@@ -50,6 +50,11 @@ export interface IUser extends Document {
   termsAccepted?: boolean;
   personalization?: {
     memories?: boolean;
+    vectorMemories?: boolean;
+    embeddingProvider?: string;
+    embeddingModel?: string;
+    extractionProvider?: string;
+    extractionModel?: string;
   };
   favorites?: TUserFavorite[];
   /** Per-skill active/inactive overrides. Key = skillId, value = active state. */
@@ -95,6 +100,11 @@ export interface UpdateUserRequest {
   termsAccepted?: boolean;
   personalization?: {
     memories?: boolean;
+    vectorMemories?: boolean;
+    embeddingProvider?: string;
+    embeddingModel?: string;
+    extractionProvider?: string;
+    extractionModel?: string;
   };
   skillStates?: Record<string, boolean>;
 }

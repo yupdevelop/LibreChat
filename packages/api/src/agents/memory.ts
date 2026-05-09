@@ -21,6 +21,7 @@ import type { Response as ServerResponse } from 'express';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
+import { createEmbedding } from '~/memory/embeddings';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -92,12 +93,16 @@ export const createMemoryTool = ({
   validKeys,
   tokenLimit,
   totalTokens = 0,
+  embeddingProvider,
+  embeddingModel,
 }: {
   userId: string | ObjectId;
   setMemory: MemoryMethods['setMemory'];
   validKeys?: string[];
   tokenLimit?: number;
   totalTokens?: number;
+  embeddingProvider?: string;
+  embeddingModel?: string;
 }): DynamicStructuredTool => {
   const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
@@ -164,7 +169,12 @@ export const createMemoryTool = ({
           },
         };
 
-        const result = await setMemory({ userId, key, value, tokenCount });
+        const embedding = await createEmbedding(value, {
+          provider: embeddingProvider || 'google',
+          model: embeddingModel || 'text-embedding-004',
+        });
+
+        const result = await setMemory({ userId, key, value, tokenCount, embedding });
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
           return [`Memory set for key "${key}" (${tokenCount} tokens)`, artifact];
@@ -322,6 +332,8 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      embeddingProvider: user?.personalization?.embeddingProvider,
+      embeddingModel: user?.personalization?.embeddingModel,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,

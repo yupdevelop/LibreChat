@@ -4,6 +4,7 @@ const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
   toggleUserMemories,
+  updateVectorMemoryPreferences,
   getRoleByName,
   createMemory,
   deleteMemory,
@@ -183,6 +184,46 @@ router.patch('/preferences', checkMemoryOptOut, async (req, res) => {
       updated: true,
       preferences: {
         memories: updatedUser.personalization?.memories ?? true,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PATCH /memories/vector-preferences
+ * Updates the user's vector memory preferences.
+ * Body: { vectorMemories, embeddingProvider, embeddingModel, extractionProvider, extractionModel }
+ */
+router.patch('/vector-preferences', checkMemoryOptOut, async (req, res) => {
+  const { vectorMemories, embeddingProvider, embeddingModel, extractionProvider, extractionModel } = req.body;
+
+  if (typeof vectorMemories !== 'boolean') {
+    return res.status(400).json({ error: 'vectorMemories must be a boolean value.' });
+  }
+
+  try {
+    const updatedUser = await updateVectorMemoryPreferences(req.user.id, {
+      vectorMemories,
+      embeddingProvider: typeof embeddingProvider === 'string' ? embeddingProvider : 'google',
+      embeddingModel: typeof embeddingModel === 'string' ? embeddingModel : 'text-embedding-004',
+      extractionProvider: typeof extractionProvider === 'string' ? extractionProvider : '',
+      extractionModel: typeof extractionModel === 'string' ? extractionModel : '',
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    res.json({
+      updated: true,
+      preferences: {
+        vectorMemories: updatedUser.personalization?.vectorMemories ?? true,
+        embeddingProvider: updatedUser.personalization?.embeddingProvider ?? 'google',
+        embeddingModel: updatedUser.personalization?.embeddingModel ?? 'text-embedding-004',
+        extractionProvider: updatedUser.personalization?.extractionProvider ?? '',
+        extractionModel: updatedUser.personalization?.extractionModel ?? '',
       },
     });
   } catch (error) {

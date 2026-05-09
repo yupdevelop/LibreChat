@@ -24,6 +24,7 @@ const {
   getTransactionsConfig,
   resolveRecursionLimit,
   createMemoryProcessor,
+  createEmbedding,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -400,7 +401,10 @@ class AgentClient extends BaseClient {
     }
 
     /** Memory context (user preferences/memories) */
-    const withoutKeys = await this.useMemory();
+    const latestMessageText = typeof latestMessage?.content === 'string'
+      ? latestMessage.content
+      : '';
+    const withoutKeys = await this.useMemory(latestMessageText);
     const memoryContext = withoutKeys
       ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
       : undefined;
@@ -496,7 +500,7 @@ class AgentClient extends BaseClient {
   /**
    * @returns {Promise<string | undefined>}
    */
-  async useMemory() {
+  async useMemory(userMessage) {
     const user = this.options.req.user;
     if (user.personalization?.memories === false) {
       return;
@@ -523,9 +527,27 @@ class AgentClient extends BaseClient {
     const userId = this.options.req.user.id + '';
     this.processMemory = undefined;
 
+    const vectorEnabled = user.personalization?.vectorMemories !== false;
+    let queryEmbedding;
+
+    if (vectorEnabled && userMessage) {
+      try {
+        queryEmbedding = await createEmbedding(userMessage, {
+          provider: user.personalization?.embeddingProvider || 'google',
+          model: user.personalization?.embeddingModel || 'text-embedding-004',
+        });
+      } catch (error) {
+        logger.warn('[useMemory] Embedding failed, falling back to non-vector search', error);
+      }
+    }
+
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withoutKeys } = await db.getFormattedMemories({ userId });
+        const getMemoriesParams = {
+          userId,
+          ...(queryEmbedding ? { queryEmbedding, topK: 20 } : {}),
+        };
+        const { withoutKeys } = await db.getFormattedMemories(getMemoriesParams);
         return withoutKeys;
       } catch (error) {
         logger.error(

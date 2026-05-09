@@ -1263,6 +1263,21 @@ export const memorySchema = z.object({
       }),
     ])
     .optional(),
+  vectorSearch: z
+    .object({
+      enabled: z.boolean().optional().default(true),
+      provider: z.string().optional().default('google'),
+      model: z.string().optional().default('text-embedding-004'),
+    })
+    .optional(),
+  extraction: z
+    .object({
+      provider: z.string().optional().default(''),
+      model: z.string().optional().default(''),
+      retryDelay: z.number().optional().default(120000),
+      maxRetries: z.number().optional().default(12),
+    })
+    .optional(),
 });
 
 export type TMemoryConfig = DeepPartial<z.infer<typeof memorySchema>>;

@@ -9,6 +9,22 @@ const formatDate = (date: Date): string => {
   return date.toISOString().split('T')[0];
 };
 
+/**
+ * Cosine similarity between two vectors of equal length.
+ * Returns 0 if lengths don't match or one is empty.
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a || !b || a.length !== b.length || a.length === 0) return 0;
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(magA) * Math.sqrt(magB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
 // Factory function that takes mongoose instance and returns the methods
 export function createMemoryMethods(mongoose: typeof import('mongoose')) {
   /**
@@ -56,6 +72,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     key,
     value,
     tokenCount = 0,
+    embedding,
   }: t.SetMemoryParams): Promise<t.MemoryResult> {
     try {
       if (key?.toLowerCase() === 'nothing') {
@@ -63,13 +80,17 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
       }
 
       const MemoryEntry = mongoose.models.MemoryEntry;
+      const update: Record<string, unknown> = {
+        value,
+        tokenCount,
+        updated_at: new Date(),
+      };
+      if (embedding) {
+        update.embedding = embedding;
+      }
       await MemoryEntry.findOneAndUpdate(
         { userId, key },
-        {
-          value,
-          tokenCount,
-          updated_at: new Date(),
-        },
+        { $set: update },
         {
           upsert: true,
           new: true,
@@ -104,10 +125,15 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
    */
   async function getAllUserMemories(
     userId: string | Types.ObjectId,
+    includeEmbedding = false,
   ): Promise<t.IMemoryEntryLean[]> {
     try {
       const MemoryEntry = mongoose.models.MemoryEntry;
-      return (await MemoryEntry.find({ userId }).lean()) as t.IMemoryEntryLean[];
+      let query = MemoryEntry.find({ userId });
+      if (includeEmbedding) {
+        query = query.select('+embedding');
+      }
+      return (await query.lean()) as t.IMemoryEntryLean[];
     } catch (error) {
       throw new Error(
         `Failed to get all memories: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -120,15 +146,35 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
    */
   async function getFormattedMemories({
     userId,
+    queryEmbedding,
+    topK = 20,
   }: t.GetFormattedMemoriesParams): Promise<t.FormattedMemoriesResult> {
     try {
-      const memories = await getAllUserMemories(userId);
+      const memories = await getAllUserMemories(userId, !!queryEmbedding);
 
       if (!memories || memories.length === 0) {
         return { withKeys: '', withoutKeys: '', totalTokens: 0 };
       }
 
-      const sortedMemories = memories.sort(
+      let selectedMemories = memories;
+
+      if (queryEmbedding) {
+        const scored = memories
+          .filter((m) => m.embedding && m.embedding.length === queryEmbedding.length)
+          .map((m) => ({
+            memory: m,
+            score: cosineSimilarity(queryEmbedding, m.embedding!),
+          }))
+          .sort((a, b) => b.score - a.score);
+
+        selectedMemories = scored.slice(0, topK).map((s) => s.memory);
+
+        if (selectedMemories.length === 0) {
+          selectedMemories = memories.slice(0, topK);
+        }
+      }
+
+      const sortedMemories = selectedMemories.sort(
         (a, b) => new Date(a.updated_at!).getTime() - new Date(b.updated_at!).getTime(),
       );
 
@@ -180,6 +226,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')) {
     getAllUserMemories,
     getFormattedMemories,
     deleteAllUserMemories,
+    cosineSimilarity,
   };
 }
 

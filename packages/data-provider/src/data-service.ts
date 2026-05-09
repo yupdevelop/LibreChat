@@ -1224,6 +1224,25 @@ export const updateMemoryPreferences = (preferences: {
   return request.patch(endpoints.memoryPreferences(), preferences);
 };
 
+export type UpdateVectorMemoryPreferencesParams = {
+  vectorMemories: boolean;
+  embeddingProvider: string;
+  embeddingModel: string;
+  extractionProvider: string;
+  extractionModel: string;
+};
+
+export type UpdateVectorMemoryPreferencesResponse = {
+  updated: boolean;
+  preferences: UpdateVectorMemoryPreferencesParams;
+};
+
+export const updateVectorMemoryPreferences = (
+  preferences: UpdateVectorMemoryPreferencesParams,
+): Promise<UpdateVectorMemoryPreferencesResponse> => {
+  return request.patch(endpoints.vectorMemoryPreferences(), preferences);
+};
+
 export const createMemory = (data: {
   key: string;
   value: string;

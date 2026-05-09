@@ -28,6 +28,11 @@ const MemoryEntrySchema: Schema<IMemoryEntry> = new Schema({
     type: Date,
     default: Date.now,
   },
+  embedding: {
+    type: [Number],
+    default: undefined,
+    select: false,
+  },
   tenantId: {
     type: String,
     index: true,

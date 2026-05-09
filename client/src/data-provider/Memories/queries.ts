@@ -74,6 +74,44 @@ export const useUpdateMemoryPreferencesMutation = (
   );
 };
 
+export type UpdateVectorMemoryPreferencesParams = {
+  vectorMemories: boolean;
+  embeddingProvider: string;
+  embeddingModel: string;
+  extractionProvider: string;
+  extractionModel: string;
+};
+export type UpdateVectorMemoryPreferencesResponse = {
+  updated: boolean;
+  preferences: UpdateVectorMemoryPreferencesParams;
+};
+
+export const useUpdateVectorMemoryPreferencesMutation = (
+  options?: UseMutationOptions<
+    UpdateVectorMemoryPreferencesResponse,
+    Error,
+    UpdateVectorMemoryPreferencesParams
+  >,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<
+    UpdateVectorMemoryPreferencesResponse,
+    Error,
+    UpdateVectorMemoryPreferencesParams
+  >(
+    [MutationKeys.updateVectorMemoryPreferences],
+    (preferences: UpdateVectorMemoryPreferencesParams) =>
+      dataService.updateVectorMemoryPreferences(preferences),
+    {
+      ...options,
+      onSuccess: (...params) => {
+        queryClient.invalidateQueries([QueryKeys.user]);
+        options?.onSuccess?.(...params);
+      },
+    },
+  );
+};
+
 export type CreateMemoryParams = { key: string; value: string };
 export type CreateMemoryResponse = { created: boolean; memory: TUserMemory };
 
