@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Switch, useToastContext } from '@librechat/client';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import { EModelEndpoint, alternateName } from 'librechat-data-provider';
@@ -56,22 +56,45 @@ function getProviders(modelsData: Record<string, string[]> | undefined): Array<{
   return providers;
 }
 
-function getEmbeddingModels(modelsData: Record<string, string[]> | undefined): Array<{ label: string; value: string }> {
+function getEmbeddingModels(
+  modelsData: Record<string, string[]> | undefined,
+  provider: string,
+): Array<{ label: string; value: string }> {
   if (!modelsData) {
     return [];
   }
 
   const embeddingModels = new Set<string>();
-  for (const models of Object.values(modelsData)) {
+  const entries = provider
+    ? Object.entries(modelsData).filter(([endpoint]) => endpoint === provider)
+    : Object.entries(modelsData);
+
+  for (const [, models] of entries) {
     if (Array.isArray(models)) {
       for (const model of models) {
-        if (model.toLowerCase().includes('embedding')) {
+        if (model.toLowerCase().includes('embedding') || model.toLowerCase().includes('embed')) {
           embeddingModels.add(model);
         }
       }
     }
   }
   return Array.from(embeddingModels).map((m) => ({ label: m, value: m }));
+}
+
+function getModelsByProvider(
+  modelsData: Record<string, string[]> | undefined,
+  provider: string,
+): string[] {
+  if (!modelsData || !provider) {
+    return [];
+  }
+
+  const models = modelsData[provider];
+  if (!Array.isArray(models)) {
+    return [];
+  }
+
+  return models.filter((m) => !m.toLowerCase().includes('embedding') && !m.toLowerCase().includes('embed'));
 }
 
 export default function Personalization({
@@ -187,9 +210,17 @@ export default function Personalization({
     );
   }
 
-  const extractionModels = getChatModels(modelsData);
   const providers = getProviders(modelsData);
-  const embeddingModels = getEmbeddingModels(modelsData);
+
+  const embeddingModels = useMemo(
+    () => getEmbeddingModels(modelsData, embeddingProvider),
+    [modelsData, embeddingProvider],
+  );
+
+  const extractionModels = useMemo(
+    () => getModelsByProvider(modelsData, extractionProvider),
+    [modelsData, extractionProvider],
+  );
 
   return (
     <div className="flex flex-col gap-3 text-sm text-text-primary">

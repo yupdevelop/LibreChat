@@ -34,6 +34,7 @@ const {
   isSkillPrimeMessage,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
+  Tokenizer,
 } = require('@librechat/api');
 const {
   Callback,
@@ -712,36 +713,102 @@ class AgentClient extends BaseClient {
       }
       const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
-      const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
+      const userId = this.user ?? this.options.req.user?.id;
+      if (!userId) {
+        return;
+      }
 
-      /**
-       * Strip skill-primed meta messages before memory extraction. The primes
-       * sit next to the latest user message and carry large SKILL.md bodies,
-       * so letting them into the window would crowd out real chat turns and
-       * pollute extracted memories with synthetic instruction content the
-       * user never typed.
-       */
-      const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
+      const oneHourAgo = new Date(Date.now() - 3600000);
+      const { messages: dbMessages } = await db.getMessagesByCursor(
+        { user: userId, createdAt: { $gte: oneHourAgo } },
+        { sortField: 'createdAt', sortOrder: 1, limit: 1000 },
+      );
 
-      let messagesToProcess = [...chatMessages];
-      if (chatMessages.length > messageWindowSize) {
-        for (let i = chatMessages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = chatMessages.slice(i, i + messageWindowSize);
-          if (potentialWindow[0]?.role === 'user') {
-            messagesToProcess = [...potentialWindow];
-            break;
-          }
+      if (!dbMessages || dbMessages.length === 0) {
+        return;
+      }
+
+      const validMessages = dbMessages.filter(
+        (msg) => msg.text && msg.text.trim(),
+      );
+
+      if (validMessages.length === 0) {
+        return;
+      }
+
+      const agentInstructions = memoryConfig?.instructions || this.options.agent?.instructions || '';
+      const instructionTokens = Tokenizer.getTokenCount(agentInstructions, 'o200k_base');
+
+      /** @type {number} */
+      let tokenLimit;
+      if (typeof memoryConfig?.tokenLimit === 'number' && memoryConfig.tokenLimit > 0) {
+        tokenLimit = memoryConfig.tokenLimit;
+      } else if (typeof this.options?.summarizationThreshold === 'number' && this.options.summarizationThreshold > 0) {
+        tokenLimit = this.options.summarizationThreshold;
+      } else {
+        tokenLimit = 98304;
+      }
+
+      const availableTokens = Math.max(tokenLimit - instructionTokens, 0);
+      if (availableTokens <= 0) {
+        return;
+      }
+
+      const messagesWithTokens = validMessages.map((msg) => {
+        const tokenCount = Tokenizer.getTokenCount(msg.text, 'o200k_base');
+        return { message: msg, tokenCount };
+      });
+
+      const sortedMessages = [...messagesWithTokens].sort((a, b) => {
+        const dateA = a.message.createdAt ? new Date(a.message.createdAt).getTime() : 0;
+        const dateB = b.message.createdAt ? new Date(b.message.createdAt).getTime() : 0;
+        return dateA - dateB;
+      });
+
+      let totalTokens = sortedMessages.reduce((sum, item) => sum + item.tokenCount, 0);
+      if (totalTokens <= availableTokens) {
+        const bufferString = getBufferString(sortedMessages.map((item) => item.message));
+        const bufferMessage = new HumanMessage(`# Recent Conversations:\n\n${bufferString}`);
+        return await this.processMemory([bufferMessage]);
+      }
+
+      const assistantMessages = sortedMessages.filter(
+        (item) => item.message.isCreatedByUser === false,
+      );
+      const userMessages = sortedMessages.filter(
+        (item) => item.message.isCreatedByUser === true,
+      );
+
+      const remaining = [...sortedMessages];
+      let currentTokens = totalTokens;
+
+      for (const item of assistantMessages) {
+        if (currentTokens <= availableTokens) {
+          break;
         }
-
-        if (messagesToProcess.length === chatMessages.length) {
-          messagesToProcess = [...chatMessages.slice(-messageWindowSize)];
+        const index = remaining.findIndex((r) => r.message.messageId === item.message.messageId);
+        if (index !== -1) {
+          currentTokens -= remaining[index].tokenCount;
+          remaining.splice(index, 1);
         }
       }
 
-      const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
-      const bufferString = getBufferString(filteredMessages);
-      const bufferMessage = new HumanMessage(`# Current Chat:\n\n${bufferString}`);
-      return await this.processMemory([bufferMessage]);
+      for (const item of userMessages) {
+        if (currentTokens <= availableTokens) {
+          break;
+        }
+        const index = remaining.findIndex((r) => r.message.messageId === item.message.messageId);
+        if (index !== -1) {
+          currentTokens -= remaining[index].tokenCount;
+          remaining.splice(index, 1);
+        }
+      }
+
+      if (remaining.length > 0) {
+        const bufferString = getBufferString(remaining.map((item) => item.message));
+        const bufferMessage = new HumanMessage(`# Recent Conversations:\n\n${bufferString}`);
+        return await this.processMemory([bufferMessage]);
+      }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
     }
