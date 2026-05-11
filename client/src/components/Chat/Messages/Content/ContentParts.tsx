@@ -19,6 +19,9 @@ import ToolCallGroup from './ToolCallGroup';
 import Container from './Container';
 import Part from './Part';
 
+const getToolCallId = (part: TMessageContentParts): string =>
+  (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
+
 type PartWithContextProps = {
   part: TMessageContentParts;
   idx: number;
@@ -31,6 +34,7 @@ type PartWithContextProps = {
   isCreatedByUser: boolean;
   isLast: boolean;
   partAttachments: TAttachment[] | undefined;
+  hideAttachments?: boolean;
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -45,6 +49,7 @@ const PartWithContext = memo(function PartWithContext({
   isCreatedByUser,
   isLast,
   partAttachments,
+  hideAttachments,
 }: PartWithContextProps) {
   const contextValue = useMemo(
     () => ({
@@ -69,6 +74,7 @@ const PartWithContext = memo(function PartWithContext({
         isCreatedByUser={isCreatedByUser}
         isLast={isLastPart}
         showCursor={isLastPart && isLast}
+        hideAttachments={hideAttachments}
       />
     </MessageContext.Provider>
   );
@@ -144,7 +150,7 @@ const ContentParts = memo(function ContentParts({
       newContent.splice(partIndex, 1);
 
       const previousMessages = currentMessages;
-      const newMessages = currentMessages.map((m) => 
+      const newMessages = currentMessages.map((m) =>
         m.messageId === messageId ? { ...m, content: newContent } : m
       );
       setMessages(newMessages);
@@ -225,7 +231,6 @@ const ContentParts = memo(function ContentParts({
 
   const renderPart = useCallback(
     (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
-      const toolCallId = (part?.[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.id ?? '';
       return (
         <div key={`part-wrapper-${messageId}-${idx}`} className="group/part relative flex flex-col">
           <PartWithContext
@@ -239,7 +244,7 @@ const ContentParts = memo(function ContentParts({
             isCreatedByUser={isCreatedByUser}
             nextType={content?.[idx + 1]?.type}
             isSubmitting={effectiveIsSubmitting}
-            partAttachments={attachmentMap[toolCallId]}
+            partAttachments={attachmentMap[getToolCallId(part)]}
           />
           {!effectiveIsSubmitting && (
             <button
@@ -266,6 +271,65 @@ const ContentParts = memo(function ContentParts({
       handleDeletePart,
       localize,
     ],
+  );
+
+  const renderGroupedPart = useCallback(
+    (part: TMessageContentParts, idx: number, isLastPart: boolean) => {
+      return (
+        <PartWithContext
+          key={`provider-${messageId}-${idx}`}
+          idx={idx}
+          part={part}
+          isLast={isLast}
+          messageId={messageId}
+          isLastPart={isLastPart}
+          conversationId={conversationId}
+          isLatestMessage={isLatestMessage}
+          isCreatedByUser={isCreatedByUser}
+          nextType={content?.[idx + 1]?.type}
+          isSubmitting={effectiveIsSubmitting}
+          partAttachments={attachmentMap[getToolCallId(part)]}
+          hideAttachments
+        />
+      );
+    },
+    [
+      attachmentMap,
+      content,
+      conversationId,
+      effectiveIsSubmitting,
+      isCreatedByUser,
+      isLast,
+      isLatestMessage,
+      messageId,
+    ],
+  );
+
+  const sequentialParts = useMemo<PartWithIndex[]>(() => {
+    if (!content) {
+      return [];
+    }
+    const result: PartWithIndex[] = [];
+    content.forEach((part, idx) => {
+      if (part) {
+        result.push({ part, idx });
+      }
+    });
+    return result;
+  }, [content]);
+
+  const groupedParts = useMemo(
+    () =>
+      groupSequentialToolCalls(sequentialParts).map((group) => {
+        if (group.type === 'single') {
+          return group;
+        }
+        const groupAttachments = group.parts.flatMap(
+          ({ part }) => attachmentMap[getToolCallId(part)] ?? [],
+        );
+        return { ...group, groupAttachments };
+      }),
+    [sequentialParts, attachmentMap],
   );
 
   // Early return: no content to render AND no pending skill cards
@@ -338,14 +402,6 @@ const ContentParts = memo(function ContentParts({
   }
 
   // Sequential content: render parts in order (90% of cases)
-  const sequentialParts: PartWithIndex[] = [];
-  safeContent.forEach((part, idx) => {
-    if (part) {
-      sequentialParts.push({ part, idx });
-    }
-  });
-  const groupedParts = groupSequentialToolCalls(sequentialParts);
-
   return (
     <SearchContext.Provider value={{ searchResults }}>
       <MemoryArtifacts attachments={attachments} />
@@ -366,8 +422,9 @@ const ContentParts = memo(function ContentParts({
             parts={group.parts}
             isSubmitting={effectiveIsSubmitting}
             isLast={group.parts.some((p) => p.idx === lastContentIdx)}
-            renderPart={renderPart}
+            renderPart={renderGroupedPart}
             lastContentIdx={lastContentIdx}
+            groupAttachments={group.groupAttachments}
           />
         );
       })}
