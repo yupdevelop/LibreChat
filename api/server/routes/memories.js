@@ -347,11 +347,21 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
     const messageLimit = limit && limit > 0 ? limit : null;
 
-    const messages = await getMessages({
+    const allMessages = await getMessages({
       user: req.user.id,
     });
 
-    const sortedMessages = messages.sort((a, b) => {
+    const validMessages = allMessages.filter((msg) => msg && msg.text && msg.text.trim());
+
+    if (validMessages.length === 0) {
+      return res.json({
+        extracted: true,
+        messagesProcessed: 0,
+        attachments: [],
+      });
+    }
+
+    const sortedMessages = [...validMessages].sort((a, b) => {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 

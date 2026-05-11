@@ -56,29 +56,31 @@ function getProviders(modelsData: Record<string, string[]> | undefined): Array<{
   return providers;
 }
 
-function getEmbeddingModels(
-  modelsData: Record<string, string[]> | undefined,
-  provider: string,
-): Array<{ label: string; value: string }> {
-  if (!modelsData) {
-    return [];
-  }
+const EMBEDDING_MODELS_BY_PROVIDER: Record<string, string[]> = {
+  openAI: [
+    'text-embedding-3-small',
+    'text-embedding-3-large',
+    'text-embedding-ada-002',
+  ],
+  google: [
+    'text-embedding-004',
+    'embedding-001',
+  ],
+  azureOpenAI: [
+    'text-embedding-3-small',
+    'text-embedding-3-large',
+    'text-embedding-ada-002',
+  ],
+  anthropic: [],
+  bedrock: [
+    'amazon.titan-embed-text-v2:0',
+    'amazon.titan-embed-embed-v1',
+  ],
+};
 
-  const embeddingModels = new Set<string>();
-  const entries = provider
-    ? Object.entries(modelsData).filter(([endpoint]) => endpoint === provider)
-    : Object.entries(modelsData);
-
-  for (const [, models] of entries) {
-    if (Array.isArray(models)) {
-      for (const model of models) {
-        if (model.toLowerCase().includes('embedding') || model.toLowerCase().includes('embed')) {
-          embeddingModels.add(model);
-        }
-      }
-    }
-  }
-  return Array.from(embeddingModels).map((m) => ({ label: m, value: m }));
+function getEmbeddingModels(provider: string): Array<{ label: string; value: string }> {
+  const models = EMBEDDING_MODELS_BY_PROVIDER[provider] || [];
+  return models.map((m) => ({ label: m, value: m }));
 }
 
 function getModelsByProvider(
@@ -213,8 +215,8 @@ export default function Personalization({
   const providers = getProviders(modelsData);
 
   const embeddingModels = useMemo(
-    () => getEmbeddingModels(modelsData, embeddingProvider),
-    [modelsData, embeddingProvider],
+    () => getEmbeddingModels(embeddingProvider),
+    [embeddingProvider],
   );
 
   const extractionModels = useMemo(
