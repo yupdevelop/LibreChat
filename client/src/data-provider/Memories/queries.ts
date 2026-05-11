@@ -152,3 +152,26 @@ export const useCreateMemoryMutation = (
     },
   );
 };
+
+export type ExtractMemoryResponse = {
+  extracted: boolean;
+  messagesProcessed: number;
+  attachments: any[];
+};
+
+export const useExtractMemoryMutation = (
+  options?: UseMutationOptions<ExtractMemoryResponse, Error, number | undefined>,
+) => {
+  const queryClient = useQueryClient();
+  return useMutation<ExtractMemoryResponse, Error, number | undefined>(
+    (limit?: number) => dataService.extractMemory(limit),
+    {
+      ...options,
+      onSuccess: (...params) => {
+        queryClient.invalidateQueries([QueryKeys.memories]);
+        queryClient.invalidateQueries([QueryKeys.user]);
+        options?.onSuccess?.(...params);
+      },
+    },
+  );
+};

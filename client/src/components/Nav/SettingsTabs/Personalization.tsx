@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Switch, useToastContext } from '@librechat/client';
+import { useGetModelsQuery } from 'librechat-data-provider/react-query';
+import { EModelEndpoint, alternateName } from 'librechat-data-provider';
 import {
   useGetUserQuery,
   useUpdateMemoryPreferencesMutation,
   useUpdateVectorMemoryPreferencesMutation,
+  useExtractMemoryMutation,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -12,19 +15,64 @@ interface PersonalizationProps {
   hasAnyPersonalizationFeature: boolean;
 }
 
-const MODELS = [
-  { label: 'text-embedding-004', value: 'text-embedding-004' },
-  { label: 'text-embedding-3-small', value: 'text-embedding-3-small' },
-  { label: 'text-embedding-3-large', value: 'text-embedding-3-large' },
-  { label: 'nomic-embed-text-v1.5', value: 'nomic-embed-text-v1.5' },
-];
+const NON_CHAT_ENDPOINTS = new Set([
+  EModelEndpoint.assistants,
+  EModelEndpoint.azureAssistants,
+  EModelEndpoint.agents,
+]);
 
-const PROVIDERS = [
-  { label: 'Google Gemini', value: 'google' },
-  { label: 'OpenAI', value: 'openai' },
-  { label: 'OpenRouter', value: 'openrouter' },
-  { label: 'LM Studio', value: 'lm-studio' },
-];
+function getChatModels(modelsData: Record<string, string[]> | undefined): string[] {
+  if (!modelsData) {
+    return [];
+  }
+
+  const chatModels = new Set<string>();
+  for (const [endpoint, models] of Object.entries(modelsData)) {
+    if (NON_CHAT_ENDPOINTS.has(endpoint as EModelEndpoint)) {
+      continue;
+    }
+    if (Array.isArray(models)) {
+      for (const model of models) {
+        chatModels.add(model);
+      }
+    }
+  }
+  return Array.from(chatModels).sort();
+}
+
+function getProviders(modelsData: Record<string, string[]> | undefined): Array<{ label: string; value: string }> {
+  if (!modelsData) {
+    return [];
+  }
+
+  const providers: Array<{ label: string; value: string }> = [];
+  for (const [endpoint] of Object.entries(modelsData)) {
+    if (NON_CHAT_ENDPOINTS.has(endpoint as EModelEndpoint)) {
+      continue;
+    }
+    const label = alternateName[endpoint as EModelEndpoint] || endpoint;
+    providers.push({ label, value: endpoint });
+  }
+  return providers;
+}
+
+function getEmbeddingModels(modelsData: Record<string, string[]> | undefined): Array<{ label: string; value: string }> {
+  if (!modelsData) {
+    return [];
+  }
+
+  const embeddingModels = new Set<string>();
+  for (const models of Object.values(modelsData)) {
+    if (Array.isArray(models)) {
+      for (const model of models) {
+        if (model.toLowerCase().includes('embedding')) {
+          embeddingModels.add(model);
+        }
+      }
+    }
+  }
+  return Array.from(embeddingModels).map((m) => ({ label: m, value: m }));
+}
 
 export default function Personalization({
   hasMemoryOptOut,
@@ -33,6 +81,7 @@ export default function Personalization({
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const { data: user } = useGetUserQuery();
+  const { data: modelsData } = useGetModelsQuery();
   const [referenceSavedMemories, setReferenceSavedMemories] = useState(true);
   const [vectorMemories, setVectorMemories] = useState(true);
   const [embeddingProvider, setEmbeddingProvider] = useState('google');
@@ -57,6 +106,21 @@ export default function Personalization({
   });
 
   const updateVectorMemoryMutation = useUpdateVectorMemoryPreferencesMutation({
+    onSuccess: () => {
+      showToast({
+        message: localize('com_ui_preferences_updated'),
+        status: 'success',
+      });
+    },
+    onError: () => {
+      showToast({
+        message: localize('com_ui_error_updating_preferences'),
+        status: 'error',
+      });
+    },
+  });
+
+  const extractMemoryMutation = useExtractMemoryMutation({
     onSuccess: () => {
       showToast({
         message: localize('com_ui_preferences_updated'),
@@ -123,8 +187,9 @@ export default function Personalization({
     );
   }
 
-  const embeddingModels = MODELS;
-  const extractionModels = MODELS;
+  const extractionModels = getChatModels(modelsData);
+  const providers = getProviders(modelsData);
+  const embeddingModels = getEmbeddingModels(modelsData);
 
   return (
     <div className="flex flex-col gap-3 text-sm text-text-primary">
@@ -185,10 +250,10 @@ export default function Personalization({
           {vectorMemories && (
             <>
               {/* Embedding Configuration */}
-              <div className="text-sm font-medium mt-2">Embedding</div>
+              <div className="text-sm font-medium mt-2">{localize('com_ui_embedding')}</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-text-secondary mb-1">Provider</label>
+                  <label className="block text-xs text-text-secondary mb-1">{localize('com_ui_provider')}</label>
                   <select
                     className="w-full rounded border border-border-medium bg-surface-secondary px-2 py-1.5 text-sm"
                     value={embeddingProvider}
@@ -204,13 +269,13 @@ export default function Personalization({
                       });
                     }}
                   >
-                    {PROVIDERS.map((p) => (
+                    {providers.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-text-secondary mb-1">Model</label>
+                  <label className="block text-xs text-text-secondary mb-1">{localize('com_ui_model')}</label>
                   <select
                     className="w-full rounded border border-border-medium bg-surface-secondary px-2 py-1.5 text-sm"
                     value={embeddingModel}
@@ -226,18 +291,22 @@ export default function Personalization({
                       });
                     }}
                   >
-                    {embeddingModels.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
+                    {embeddingModels.length > 0 ? (
+                      embeddingModels.map((m) => (
+                        <option key={m.value} value={m.value}>{m.label}</option>
+                      ))
+                    ) : (
+                      <option value="">{localize('com_ui_no_embedding_models')}</option>
+                    )}
                   </select>
                 </div>
               </div>
 
               {/* Extraction Configuration */}
-              <div className="text-sm font-medium mt-3">Extraction</div>
+              <div className="text-sm font-medium mt-3">{localize('com_ui_extraction')}</div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-text-secondary mb-1">Provider</label>
+                  <label className="block text-xs text-text-secondary mb-1">{localize('com_ui_provider')}</label>
                   <select
                     className="w-full rounded border border-border-medium bg-surface-secondary px-2 py-1.5 text-sm"
                     value={extractionProvider}
@@ -253,14 +322,14 @@ export default function Personalization({
                       });
                     }}
                   >
-                    <option value="">Same as chat</option>
-                    {PROVIDERS.map((p) => (
+                    <option value="">{localize('com_ui_same_as_chat')}</option>
+                    {providers.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-text-secondary mb-1">Model</label>
+                  <label className="block text-xs text-text-secondary mb-1">{localize('com_ui_model')}</label>
                   <select
                     className="w-full rounded border border-border-medium bg-surface-secondary px-2 py-1.5 text-sm"
                     value={extractionModel}
@@ -276,12 +345,25 @@ export default function Personalization({
                       });
                     }}
                   >
-                    <option value="">Auto</option>
+                    <option value="">{localize('com_ui_auto')}</option>
                     {extractionModels.map((m) => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
+                      <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* Manual Extract Button */}
+              <div className="mt-4">
+                <button
+                  className="px-4 py-2 text-sm text-text-primary bg-surface-primary border border-border-medium rounded hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => extractMemoryMutation.mutate(20)}
+                  disabled={extractMemoryMutation.isLoading || !vectorMemories}
+                >
+                  {extractMemoryMutation.isLoading
+                    ? localize('com_ui_extracting')
+                    : localize('com_ui_extract_now')}
+                </button>
               </div>
             </>
           )}

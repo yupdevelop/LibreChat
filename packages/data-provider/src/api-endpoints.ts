@@ -462,6 +462,7 @@ export const memories = () => `${BASE_URL}/api/memories`;
 export const memory = (key: string) => `${memories()}/${encodeURIComponent(key)}`;
 export const memoryPreferences = () => `${memories()}/preferences`;
 export const vectorMemoryPreferences = () => `${memories()}/vector-preferences`;
+export const memoriesExtract = () => `${memories()}/extract`;
 
 export const searchPrincipals = (params: q.PrincipalSearchParams) => {
   const { q: query, limit, types } = params;

@@ -1250,6 +1250,11 @@ export const createMemory = (data: {
   return request.post(endpoints.memories(), data);
 };
 
+export const extractMemory = (limit?: number): Promise<{ extracted: boolean; messagesProcessed: number; attachments: any[] }> => {
+  const params = limit ? `?limit=${limit}` : '';
+  return request.post(endpoints.memoriesExtract() + params);
+};
+
 export function searchPrincipals(
   params: q.PrincipalSearchParams,
 ): Promise<q.PrincipalSearchResponse> {

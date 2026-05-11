@@ -9,6 +9,7 @@ const {
   createMemory,
   deleteMemory,
   setMemory,
+  getMessages,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
@@ -333,6 +334,77 @@ router.delete('/:key', checkMemoryDelete, async (req, res) => {
     res.json({ deleted: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /memories/extract
+ * Manually triggers memory extraction from recent messages.
+ * Query params: limit (number of recent messages to use, default: all)
+ */
+router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
+    const messageLimit = limit && limit > 0 ? limit : null;
+
+    const messages = await getMessages({
+      user: req.user.id,
+    });
+
+    const sortedMessages = messages.sort((a, b) => {
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+    const recentMessages = messageLimit ? sortedMessages.slice(0, messageLimit) : sortedMessages;
+    const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
+    const bufferString = getBufferString(recentMessages);
+    const memoryMessage = new HumanMessage(`# Recent Conversation:\n\n${bufferString}`);
+
+    const memories = await getAllUserMemories(req.user.id);
+    const memoryString = memories.length > 0
+      ? memories.map((m) => `${m.key}: ${m.value}`).join('\n')
+      : 'No existing memories';
+
+    const appConfig = req.config;
+    const memoryConfig = appConfig?.memory;
+    const tokenLimit = memoryConfig?.tokenLimit;
+
+    const userPref = req.user.personalization || {};
+    const extractionProvider = userPref.extractionProvider || '';
+    const extractionModel = userPref.extractionModel || '';
+
+    const { processMemory } = require('@librechat/api');
+    const { createSafeUser } = require('~/utils');
+
+    const result = await processMemory({
+      res,
+      userId: req.user.id,
+      setMemory,
+      deleteMemory,
+      messages: [memoryMessage],
+      memory: memoryString,
+      messageId: `manual-${Date.now()}`,
+      conversationId: 'manual-extract',
+      instructions: '',
+      tokenLimit,
+      llmConfig: extractionProvider && extractionModel
+        ? {
+            provider: extractionProvider,
+            model: extractionModel,
+          }
+        : undefined,
+      streamId: null,
+      user: createSafeUser(req.user),
+    });
+
+    res.json({
+      extracted: true,
+      messagesProcessed: recentMessages.length,
+      attachments: result || [],
+    });
+  } catch (error) {
+    console.error('[MemoryExtract] Error:', error);
+    res.status(500).json({ error: error.message || 'Memory extraction failed' });
   }
 });
 
