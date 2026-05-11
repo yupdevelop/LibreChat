@@ -26,6 +26,7 @@ const {
   resolveRecursionLimit,
   createMemoryProcessor,
   createEmbedding,
+  processMemory: apiProcessMemory,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -775,7 +776,28 @@ class AgentClient extends BaseClient {
           })
           .join('\n\n');
         const bufferMessage = new HumanMessage(`# Recent Conversations:\n\n${bufferString}`);
-        return await this.processMemory([bufferMessage]);
+        const userPref = this.options.req.user?.personalization || {};
+        const extractionProvider = userPref.extractionProvider || '';
+        const extractionModel = userPref.extractionModel || '';
+        const llmConfig = extractionProvider && extractionModel
+          ? { provider: extractionProvider, model: extractionModel }
+          : undefined;
+        const existingMemories = await db.getFormattedMemories({ userId });
+        return await apiProcessMemory({
+          res: this.options.res,
+          userId,
+          setMemory: db.setMemory,
+          deleteMemory: db.deleteMemory,
+          messages: [bufferMessage],
+          memory: existingMemories.withKeys || 'No existing memories',
+          messageId: `auto-${Date.now()}`,
+          conversationId: this.conversationId || 'auto-extract',
+          instructions: extractMemoryInstructions,
+          tokenLimit,
+          llmConfig,
+          streamId: null,
+          user: createSafeUser(this.options.req.user),
+        });
       }
 
       const assistantMessages = sortedMessages.filter(
@@ -818,7 +840,28 @@ class AgentClient extends BaseClient {
           })
           .join('\n\n');
         const bufferMessage = new HumanMessage(`# Recent Conversations:\n\n${bufferString}`);
-        return await this.processMemory([bufferMessage]);
+        const userPref = this.options.req.user?.personalization || {};
+        const extractionProvider = userPref.extractionProvider || '';
+        const extractionModel = userPref.extractionModel || '';
+        const llmConfig = extractionProvider && extractionModel
+          ? { provider: extractionProvider, model: extractionModel }
+          : undefined;
+        const existingMemories = await db.getFormattedMemories({ userId });
+        return await apiProcessMemory({
+          res: this.options.res,
+          userId,
+          setMemory: db.setMemory,
+          deleteMemory: db.deleteMemory,
+          messages: [bufferMessage],
+          memory: existingMemories.withKeys || 'No existing memories',
+          messageId: `auto-${Date.now()}`,
+          conversationId: this.conversationId || 'auto-extract',
+          instructions: extractMemoryInstructions,
+          tokenLimit,
+          llmConfig,
+          streamId: null,
+          user: createSafeUser(this.options.req.user),
+        });
       }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
