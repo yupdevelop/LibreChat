@@ -412,9 +412,18 @@ class AgentClient extends BaseClient {
     }
 
     /** Memory context (user preferences/memories) */
-    const latestMessageText = typeof latestMessage?.content === 'string'
-      ? latestMessage.content
-      : '';
+    const latestMessageText = (() => {
+      if (typeof latestMessage?.content === 'string') {
+        return latestMessage.content;
+      }
+      if (Array.isArray(latestMessage?.content)) {
+        return latestMessage.content
+          .filter((p) => p?.type === 'text' && typeof p.text === 'string')
+          .map((p) => p.text)
+          .join('\n');
+      }
+      return '';
+    })();
     const withoutKeys = await this.useMemory(latestMessageText);
     const memoryContext = withoutKeys
       ? `${memoryInstructions}\n\n# Existing memory about the user:\n${withoutKeys}`
@@ -524,14 +533,16 @@ class AgentClient extends BaseClient {
     });
 
     if (!hasAccess) {
-      logger.debug(
-        `[api/server/controllers/agents/client.js #useMemory] User ${user.id} does not have USE permission for memories`,
+      logger.warn(
+        `[MEMORY-DEBUG] useMemory EARLY-RETURN: user ${user.id} lacks USE permission for memories`,
       );
       return;
     }
     const appConfig = this.options.req.config;
     const memoryConfig = appConfig.memory;
-    if (!memoryConfig || memoryConfig.disabled === true) {
+    const userPref = user.personalization || {};
+    const hasUserMemoryConfig = userPref.vectorMemories === true || !!(userPref.extractionProvider && userPref.extractionModel);
+    if ((!memoryConfig || memoryConfig.disabled === true) && !hasUserMemoryConfig) {
       return;
     }
 
@@ -543,9 +554,21 @@ class AgentClient extends BaseClient {
 
     if (vectorEnabled && userMessage) {
       try {
+        const embeddingProvider = user.personalization?.embeddingProvider || 'google';
+        const embeddingModel = user.personalization?.embeddingModel || 'text-embedding-004';
+        let embeddingApiKey;
+        try {
+          const keyResult = await db.getUserKey({ userId, name: embeddingProvider });
+          if (keyResult) {
+            embeddingApiKey = keyResult;
+          }
+        } catch {
+          /* no user-provided key, use env var */
+        }
         queryEmbedding = await createEmbedding(userMessage, {
-          provider: user.personalization?.embeddingProvider || 'google',
-          model: user.personalization?.embeddingModel || 'text-embedding-004',
+          provider: embeddingProvider,
+          model: embeddingModel,
+          ...(embeddingApiKey ? { apiKey: embeddingApiKey } : {}),
         });
       } catch (error) {
         logger.warn('[useMemory] Embedding failed, falling back to non-vector search', error);
@@ -673,6 +696,14 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      embeddingApiKey: (() => {
+        let key;
+        try {
+          const kr = await db.getUserKey({ userId, name: user?.personalization?.embeddingProvider || 'google' });
+          if (kr) { key = kr; }
+        } catch {}
+        return key;
+      })(),
     });
 
     this.processMemory = processMemory;
@@ -795,6 +826,17 @@ class AgentClient extends BaseClient {
           db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
         });
 
+        const embeddingProvider = userPref.embeddingProvider || 'google';
+        let embeddingApiKey;
+        try {
+          const keyResult = await db.getUserKey({ userId, name: embeddingProvider });
+          if (keyResult) {
+            embeddingApiKey = keyResult;
+          }
+        } catch {
+          /* no user-provided embedding key */;
+        }
+
         const existingMemories = await db.getFormattedMemories({ userId });
         return await apiProcessMemory({
           res: this.options.res,
@@ -808,6 +850,7 @@ class AgentClient extends BaseClient {
           instructions: extractMemoryInstructions,
           tokenLimit,
           llmConfig,
+          embeddingApiKey,
           streamId: null,
           user: createSafeUser(this.options.req.user),
         });
@@ -864,6 +907,17 @@ class AgentClient extends BaseClient {
           db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
         });
 
+        const embeddingProvider = userPref.embeddingProvider || 'google';
+        let embeddingApiKey;
+        try {
+          const keyResult = await db.getUserKey({ userId, name: embeddingProvider });
+          if (keyResult) {
+            embeddingApiKey = keyResult;
+          }
+        } catch {
+          /* no user-provided embedding key */;
+        }
+
         const existingMemories = await db.getFormattedMemories({ userId });
         return await apiProcessMemory({
           res: this.options.res,
@@ -877,6 +931,7 @@ class AgentClient extends BaseClient {
           instructions: extractMemoryInstructions,
           tokenLimit,
           llmConfig,
+          embeddingApiKey,
           streamId: null,
           user: createSafeUser(this.options.req.user),
         });

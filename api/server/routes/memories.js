@@ -403,6 +403,17 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       db: { getUserKey, getUserKeyValues },
     });
 
+    const embeddingProvider = userPref.embeddingProvider || 'google';
+    let embeddingApiKey;
+    try {
+      const keyResult = await getUserKey({ userId: req.user.id, name: embeddingProvider });
+      if (keyResult) {
+        embeddingApiKey = keyResult;
+      }
+    } catch {
+      /* no user-provided embedding key */;
+    }
+
     const { processMemory } = require('@librechat/api');
 
     const result = await processMemory({
@@ -417,6 +428,7 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       instructions: extractMemoryInstructions,
       tokenLimit,
       llmConfig,
+      embeddingApiKey,
       streamId: null,
       user: createSafeUser(req.user),
     });
