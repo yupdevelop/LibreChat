@@ -1,6 +1,6 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
 const { logger } = require('@librechat/data-schemas');
-const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
+const { HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
   isEnabled,
@@ -767,7 +767,12 @@ class AgentClient extends BaseClient {
 
       let totalTokens = sortedMessages.reduce((sum, item) => sum + item.tokenCount, 0);
       if (totalTokens <= availableTokens) {
-        const bufferString = getBufferString(sortedMessages.map((item) => item.message));
+        const bufferString = sortedMessages
+          .map((item) => {
+            const role = item.message.isCreatedByUser ? 'User' : 'Assistant';
+            return `${role}: ${item.message.text}`;
+          })
+          .join('\n\n');
         const bufferMessage = new HumanMessage(`# Recent Conversations:\n\n${bufferString}`);
         return await this.processMemory([bufferMessage]);
       }
@@ -805,7 +810,12 @@ class AgentClient extends BaseClient {
       }
 
       if (remaining.length > 0) {
-        const bufferString = getBufferString(remaining.map((item) => item.message));
+        const bufferString = remaining
+          .map((item) => {
+            const role = item.message.isCreatedByUser ? 'User' : 'Assistant';
+            return `${role}: ${item.message.text}`;
+          })
+          .join('\n\n');
         const bufferMessage = new HumanMessage(`# Recent Conversations:\n\n${bufferString}`);
         return await this.processMemory([bufferMessage]);
       }

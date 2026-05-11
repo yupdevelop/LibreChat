@@ -1,5 +1,5 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess } = require('@librechat/api');
+const { Tokenizer, generateCheckAccess, createSafeUser } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
@@ -389,7 +389,6 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
     const extractionModel = userPref.extractionModel || '';
 
     const { processMemory } = require('@librechat/api');
-    const { createSafeUser } = require('~/utils');
 
     const result = await processMemory({
       res,
