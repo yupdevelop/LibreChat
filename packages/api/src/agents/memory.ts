@@ -70,7 +70,9 @@ Do NOT extract:
 - Temporary context that won't be relevant later
 - Information that is already covered by existing memories
 
-Existing memories are provided above. If a new fact updates an existing memory, use \`set_memory\` with the same key to overwrite it.`;
+Existing memories are provided above. If a new fact updates an existing memory, use \`set_memory\` with the same key to overwrite it.
+
+Write each memory in the same language the user used when sharing that information. If the user writes in multiple languages, match the language of the specific message being extracted.`;
 
 const getDefaultInstructions = (
   validKeys?: string[],

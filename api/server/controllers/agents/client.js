@@ -683,6 +683,11 @@ class AgentClient extends BaseClient {
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;
+    let embeddingApiKey;
+    try {
+      const kr = await db.getUserKey({ userId, name: user?.personalization?.embeddingProvider || 'google' });
+      if (kr) { embeddingApiKey = kr; }
+    } catch {}
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
@@ -696,14 +701,7 @@ class AgentClient extends BaseClient {
       },
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
-      embeddingApiKey: (() => {
-        let key;
-        try {
-          const kr = await db.getUserKey({ userId, name: user?.personalization?.embeddingProvider || 'google' });
-          if (kr) { key = kr; }
-        } catch {}
-        return key;
-      })(),
+      embeddingApiKey,
     });
 
     this.processMemory = processMemory;
