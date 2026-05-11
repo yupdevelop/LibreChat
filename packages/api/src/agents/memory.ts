@@ -332,6 +332,7 @@ export async function processMemory({
   totalTokens = 0,
   streamId = null,
   user,
+  embeddingApiKey,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -630,6 +631,7 @@ export async function createMemoryProcessor({
   config = {},
   streamId = null,
   user,
+  embeddingApiKey,
 }: {
   res: ServerResponse;
   messageId: string;
