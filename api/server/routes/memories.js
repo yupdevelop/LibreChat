@@ -366,8 +366,13 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
     });
 
     const recentMessages = messageLimit ? sortedMessages.slice(0, messageLimit) : sortedMessages;
-    const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
-    const bufferString = getBufferString(recentMessages);
+    const bufferString = recentMessages
+      .map((msg) => {
+        const role = msg.isCreatedByUser ? 'User' : 'Assistant';
+        return `${role}: ${msg.text}`;
+      })
+      .join('\n\n');
+    const { HumanMessage } = require('@librechat/agents/langchain/messages');
     const memoryMessage = new HumanMessage(`# Recent Conversation:\n\n${bufferString}`);
 
     const memories = await getAllUserMemories(req.user.id);
