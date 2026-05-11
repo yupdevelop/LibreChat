@@ -16,6 +16,7 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
+  extractMemoryInstructions,
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
@@ -642,7 +643,7 @@ class AgentClient extends BaseClient {
     /** @type {import('@librechat/api').MemoryConfig} */
     const config = {
       validKeys: memoryConfig.validKeys,
-      instructions: agent.instructions,
+      instructions: extractMemoryInstructions,
       llmConfig,
       tokenLimit: memoryConfig.tokenLimit,
     };

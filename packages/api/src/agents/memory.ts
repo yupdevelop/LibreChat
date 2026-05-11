@@ -53,6 +53,23 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
 export const memoryInstructions =
   'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management.';
 
+export const extractMemoryInstructions = `Extract important facts, preferences, and information about the user from the conversation history.
+
+For each distinct fact, use the \`set_memory\` tool to save it.
+Focus on:
+- User preferences and habits
+- Important life events and relationships
+- Projects and goals
+- Technical preferences and setups
+- Any information the user might want to remember later
+
+Do NOT extract:
+- Generic conversation filler
+- Temporary context that won't be relevant later
+- Information that is already covered by existing memories
+
+Existing memories are provided above. If a new fact updates an existing memory, use \`set_memory\` with the same key to overwrite it.`;
+
 const getDefaultInstructions = (
   validKeys?: string[],
   tokenLimit?: number,

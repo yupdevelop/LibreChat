@@ -1,5 +1,5 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess, createSafeUser } = require('@librechat/api');
+const { Tokenizer, generateCheckAccess, createSafeUser, extractMemoryInstructions } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
@@ -399,7 +399,7 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       memory: memoryString,
       messageId: `manual-${Date.now()}`,
       conversationId: 'manual-extract',
-      instructions: '',
+      instructions: extractMemoryInstructions,
       tokenLimit,
       llmConfig: extractionProvider && extractionModel
         ? {
