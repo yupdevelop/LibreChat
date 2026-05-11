@@ -27,6 +27,7 @@ const {
   createMemoryProcessor,
   createEmbedding,
   processMemory: apiProcessMemory,
+  resolveMemoryLLMConfig,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
   filterMalformedContentParts,
@@ -779,9 +780,14 @@ class AgentClient extends BaseClient {
         const userPref = this.options.req.user?.personalization || {};
         const extractionProvider = userPref.extractionProvider || '';
         const extractionModel = userPref.extractionModel || '';
-        const llmConfig = extractionProvider && extractionModel
-          ? { provider: extractionProvider, model: extractionModel }
-          : undefined;
+
+        const llmConfig = await resolveMemoryLLMConfig({
+          req: this.options.req,
+          provider: extractionProvider,
+          model: extractionModel,
+          db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+        });
+
         const existingMemories = await db.getFormattedMemories({ userId });
         return await apiProcessMemory({
           res: this.options.res,
@@ -843,9 +849,14 @@ class AgentClient extends BaseClient {
         const userPref = this.options.req.user?.personalization || {};
         const extractionProvider = userPref.extractionProvider || '';
         const extractionModel = userPref.extractionModel || '';
-        const llmConfig = extractionProvider && extractionModel
-          ? { provider: extractionProvider, model: extractionModel }
-          : undefined;
+
+        const llmConfig = await resolveMemoryLLMConfig({
+          req: this.options.req,
+          provider: extractionProvider,
+          model: extractionModel,
+          db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },
+        });
+
         const existingMemories = await db.getFormattedMemories({ userId });
         return await apiProcessMemory({
           res: this.options.res,

@@ -1,5 +1,11 @@
 const express = require('express');
-const { Tokenizer, generateCheckAccess, createSafeUser, extractMemoryInstructions } = require('@librechat/api');
+const {
+  Tokenizer,
+  generateCheckAccess,
+  createSafeUser,
+  extractMemoryInstructions,
+  resolveMemoryLLMConfig,
+} = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const {
   getAllUserMemories,
@@ -10,6 +16,8 @@ const {
   deleteMemory,
   setMemory,
   getMessages,
+  getUserKey,
+  getUserKeyValues,
 } = require('~/models');
 const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 
@@ -388,6 +396,13 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
     const extractionProvider = userPref.extractionProvider || '';
     const extractionModel = userPref.extractionModel || '';
 
+    const llmConfig = await resolveMemoryLLMConfig({
+      req,
+      provider: extractionProvider,
+      model: extractionModel,
+      db: { getUserKey, getUserKeyValues },
+    });
+
     const { processMemory } = require('@librechat/api');
 
     const result = await processMemory({
@@ -401,12 +416,7 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       conversationId: 'manual-extract',
       instructions: extractMemoryInstructions,
       tokenLimit,
-      llmConfig: extractionProvider && extractionModel
-        ? {
-            provider: extractionProvider,
-            model: extractionModel,
-          }
-        : undefined,
+      llmConfig,
       streamId: null,
       user: createSafeUser(req.user),
     });

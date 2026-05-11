@@ -22,6 +22,8 @@ import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveHeaders, createSafeUser } from '~/utils';
 import Tokenizer from '~/utils/tokenizer';
 import { createEmbedding } from '~/memory/embeddings';
+import { getProviderConfig } from '~/endpoints/config/providers';
+import type { ServerRequest, EndpointDbMethods } from '~/types';
 
 type RequiredMemoryMethods = Pick<
   MemoryMethods,
@@ -528,8 +530,87 @@ ${memory ?? 'No existing memories'}`;
   } catch (error) {
     logger.error(
       `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId}`,
-      { error },
+      { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
     );
+    throw error;
+  }
+}
+
+/**
+ * Buffer (in ms) used to synthesize a `body.key` (expiresAt) value when the
+ * caller (manual or scheduled memory extraction) did not provide one. The
+ * provider initializers gate the user-key lookup on `body.key` being present,
+ * so without this the user_provided credential path silently falls back to
+ * env vars and surfaces as "API key not valid".
+ */
+const MEMORY_USER_KEY_EXPIRY_BUFFER_MS = 365 * 24 * 60 * 60 * 1000;
+
+/**
+ * Resolves the LLM config for memory extraction by reusing the same provider
+ * initializer pipeline (`getProviderConfig` -> `initializeGoogle` / `initializeOpenAI`
+ * / ...) that the chat flow uses. This ensures the apiKey, baseURL, headers,
+ * service-key, proxy, and other provider-specific options match exactly what
+ * the user's chat session resolves to — whether the key is supplied via env
+ * or as user_provided in the DB — for both manual and scheduled extraction.
+ *
+ * Returns `undefined` when no provider/model is given (caller falls back to
+ * the default OpenAI memory config) or when initialization fails.
+ */
+export async function resolveMemoryLLMConfig({
+  req,
+  provider,
+  model,
+  db,
+}: {
+  req: ServerRequest;
+  provider?: string | null;
+  model?: string | null;
+  db: EndpointDbMethods;
+}): Promise<Partial<LLMConfig> | undefined> {
+  if (!provider || !model) {
+    return undefined;
+  }
+
+  try {
+    const { getOptions, overrideProvider } = getProviderConfig({
+      provider,
+      appConfig: req.config,
+    });
+
+    const initReq = (
+      req.body && typeof req.body === 'object' && 'key' in req.body && req.body.key
+        ? req
+        : {
+            ...req,
+            body: {
+              ...(req.body ?? {}),
+              key: new Date(Date.now() + MEMORY_USER_KEY_EXPIRY_BUFFER_MS).toISOString(),
+            },
+          }
+    ) as ServerRequest;
+
+    const options = await getOptions({
+      req: initReq,
+      endpoint: provider,
+      model_parameters: { model },
+      db,
+    });
+
+    const resolved: Record<string, unknown> = {
+      ...(options.llmConfig ?? {}),
+      provider: overrideProvider,
+      model,
+    };
+    if (options.configOptions) {
+      resolved.configuration = options.configOptions;
+    }
+    return resolved as Partial<LLMConfig>;
+  } catch (err) {
+    logger.warn(
+      `[resolveMemoryLLMConfig] Failed to resolve llmConfig for provider="${provider}" model="${model}"`,
+      err,
+    );
+    return undefined;
   }
 }
 
