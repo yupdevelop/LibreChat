@@ -25,6 +25,7 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { initializeMemoryCron } = require('./services/memoryCron');
 const {
   getRoleByName,
   updateAccessPermissions,
@@ -249,6 +250,7 @@ const startServer = async () => {
         await initializeOAuthReconnectManager();
       });
       await checkMigrations();
+      initializeMemoryCron();
 
       // Configure stream services (auto-detects Redis from USE_REDIS env var)
       const streamServices = createStreamServices();
