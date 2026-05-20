@@ -70,6 +70,29 @@ const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
+async function resolveEmbeddingConfig({ provider, userId, db, appConfig }) {
+  if (provider === 'google' || provider === 'gemini') {
+    const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
+    return { apiKey, baseURL: undefined };
+  }
+  try {
+    const keyResult = await db.getUserKey({ userId, name: provider });
+    if (keyResult) return { apiKey: keyResult, baseURL: undefined };
+  } catch {}
+  const customEp = (appConfig?.endpoints?.custom || [])
+    .find((ep) => ep.name?.toLowerCase?.() === provider.toLowerCase());
+  if (customEp) {
+    const resolveVar = (val) => val?.replace(/\${([^}]+)}/g, (_, name) => process.env[name] || '');
+    const apiKey = resolveVar(customEp.apiKey);
+    const baseURL = resolveVar(customEp.baseURL);
+    return {
+      apiKey: apiKey && !apiKey.startsWith('$') ? apiKey : undefined,
+      baseURL: baseURL && !baseURL.startsWith('$') ? baseURL : undefined,
+    };
+  }
+  return { apiKey: process.env.EMBEDDINGS_API_KEY || undefined, baseURL: undefined };
+}
+
 class AgentClient extends BaseClient {
   constructor(options = {}) {
     super(null, options);
@@ -556,19 +579,12 @@ class AgentClient extends BaseClient {
       try {
         const embeddingProvider = user.personalization?.embeddingProvider || 'google';
         const embeddingModel = user.personalization?.embeddingModel || 'text-embedding-004';
-        let embeddingApiKey;
-        try {
-          const keyResult = await db.getUserKey({ userId, name: embeddingProvider });
-          if (keyResult) {
-            embeddingApiKey = keyResult;
-          }
-        } catch {
-          /* no user-provided key, use env var */
-        }
+        const { apiKey: embeddingApiKey, baseURL: embeddingBaseURL } = await resolveEmbeddingConfig({ provider: embeddingProvider, userId, db, appConfig });
         queryEmbedding = await createEmbedding(userMessage, {
           provider: embeddingProvider,
           model: embeddingModel,
           ...(embeddingApiKey ? { apiKey: embeddingApiKey } : {}),
+          ...(embeddingBaseURL ? { baseURL: embeddingBaseURL } : {}),
         });
       } catch (error) {
         logger.warn('[useMemory] Embedding failed, falling back to non-vector search', error);
@@ -683,11 +699,12 @@ class AgentClient extends BaseClient {
     const messageId = this.responseMessageId + '';
     const conversationId = this.conversationId + '';
     const streamId = this.options.req?._resumableStreamId || null;
-    let embeddingApiKey;
-    try {
-      const kr = await db.getUserKey({ userId, name: user?.personalization?.embeddingProvider || 'google' });
-      if (kr) { embeddingApiKey = kr; }
-    } catch {}
+    const { apiKey: embeddingApiKey, baseURL: embeddingBaseURL } = await resolveEmbeddingConfig({
+      provider: user?.personalization?.embeddingProvider || 'google',
+      userId,
+      db,
+      appConfig: this.options.req.config,
+    });
     const [withoutKeys, processMemory] = await createMemoryProcessor({
       userId,
       config,
@@ -702,6 +719,7 @@ class AgentClient extends BaseClient {
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
       embeddingApiKey,
+      embeddingBaseURL,
     });
 
     this.processMemory = processMemory;
@@ -825,15 +843,12 @@ class AgentClient extends BaseClient {
         });
 
         const embeddingProvider = userPref.embeddingProvider || 'google';
-        let embeddingApiKey;
-        try {
-          const keyResult = await db.getUserKey({ userId, name: embeddingProvider });
-          if (keyResult) {
-            embeddingApiKey = keyResult;
-          }
-        } catch {
-          /* no user-provided embedding key */;
-        }
+        const { apiKey: embeddingApiKey, baseURL: embeddingBaseURL } = await resolveEmbeddingConfig({
+          provider: embeddingProvider,
+          userId,
+          db,
+          appConfig: this.options.req.config,
+        });
 
         const existingMemories = await db.getFormattedMemories({ userId });
         return await apiProcessMemory({
@@ -849,6 +864,7 @@ class AgentClient extends BaseClient {
           tokenLimit,
           llmConfig,
           embeddingApiKey,
+          embeddingBaseURL,
           streamId: null,
           user: createSafeUser(this.options.req.user),
         });
@@ -906,15 +922,12 @@ class AgentClient extends BaseClient {
         });
 
         const embeddingProvider = userPref.embeddingProvider || 'google';
-        let embeddingApiKey;
-        try {
-          const keyResult = await db.getUserKey({ userId, name: embeddingProvider });
-          if (keyResult) {
-            embeddingApiKey = keyResult;
-          }
-        } catch {
-          /* no user-provided embedding key */;
-        }
+        const { apiKey: embeddingApiKey, baseURL: embeddingBaseURL } = await resolveEmbeddingConfig({
+          provider: embeddingProvider,
+          userId,
+          db,
+          appConfig: this.options.req.config,
+        });
 
         const existingMemories = await db.getFormattedMemories({ userId });
         return await apiProcessMemory({
@@ -930,6 +943,7 @@ class AgentClient extends BaseClient {
           tokenLimit,
           llmConfig,
           embeddingApiKey,
+          embeddingBaseURL,
           streamId: null,
           user: createSafeUser(this.options.req.user),
         });

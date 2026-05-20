@@ -117,6 +117,7 @@ export const createMemoryTool = ({
   embeddingProvider,
   embeddingModel,
   embeddingApiKey,
+  embeddingBaseURL,
 }: {
   userId: string | ObjectId;
   setMemory: MemoryMethods['setMemory'];
@@ -126,6 +127,7 @@ export const createMemoryTool = ({
   embeddingProvider?: string;
   embeddingModel?: string;
   embeddingApiKey?: string;
+  embeddingBaseURL?: string;
 }): DynamicStructuredTool => {
   const remainingTokens = tokenLimit ? tokenLimit - totalTokens : Infinity;
   const isOverflowing = tokenLimit ? remainingTokens <= 0 : false;
@@ -196,6 +198,7 @@ export const createMemoryTool = ({
           provider: embeddingProvider || 'google',
           model: embeddingModel || 'text-embedding-004',
           ...(embeddingApiKey ? { apiKey: embeddingApiKey } : {}),
+          ...(embeddingBaseURL ? { baseURL: embeddingBaseURL } : {}),
         });
 
         const result = await setMemory({ userId, key, value, tokenCount, embedding });
@@ -333,6 +336,7 @@ export async function processMemory({
   streamId = null,
   user,
   embeddingApiKey,
+  embeddingBaseURL,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -350,6 +354,7 @@ export async function processMemory({
   streamId?: string | null;
   user?: IUser;
   embeddingApiKey?: string;
+  embeddingBaseURL?: string;
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -361,6 +366,7 @@ export async function processMemory({
       embeddingProvider: user?.personalization?.embeddingProvider,
       embeddingModel: user?.personalization?.embeddingModel,
       embeddingApiKey,
+      embeddingBaseURL,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -632,6 +638,7 @@ export async function createMemoryProcessor({
   streamId = null,
   user,
   embeddingApiKey,
+  embeddingBaseURL,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -642,6 +649,7 @@ export async function createMemoryProcessor({
   streamId?: string | null;
   user?: IUser;
   embeddingApiKey?: string;
+  embeddingBaseURL?: string;
 }): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
@@ -671,6 +679,7 @@ export async function createMemoryProcessor({
           deleteMemory: memoryMethods.deleteMemory,
           user,
           embeddingApiKey,
+          embeddingBaseURL,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);

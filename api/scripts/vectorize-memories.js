@@ -20,11 +20,39 @@
  */
 
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
 const mongoose = require('mongoose');
 
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/LibreChat';
 const GRACE_PERIOD_MS = 3600000;
 const DUPLICATE_THRESHOLD = 0.92;
+
+let _cachedConfig = null;
+function loadLibreChatConfig() {
+  if (_cachedConfig) return _cachedConfig;
+  const configPath = process.env.CONFIG_PATH || path.join(__dirname, '..', '..', 'librechat.yaml');
+  const raw = fs.readFileSync(configPath, 'utf8');
+  _cachedConfig = yaml.load(raw);
+  return _cachedConfig;
+}
+
+function resolveEmbeddingEndpoint(provider) {
+  const config = loadLibreChatConfig();
+  const customEp = (config?.endpoints?.custom || [])
+    .find((ep) => ep.name?.toLowerCase?.() === provider.toLowerCase());
+  if (!customEp) return null;
+  const resolveVar = (val) => {
+    if (!val || typeof val !== 'string') return val;
+    return val.replace(/\${([^}]+)}/g, (_, name) => process.env[name] || '');
+  };
+  const resolvedApiKey = resolveVar(customEp.apiKey);
+  return {
+    baseURL: resolveVar(customEp.baseURL),
+    apiKey: resolvedApiKey && !resolvedApiKey.startsWith('$') ? resolvedApiKey : undefined,
+  };
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,7 +70,7 @@ function cosineSimilarity(a, b) {
   return denom === 0 ? 0 : dot / denom;
 }
 
-async function createEmbedding(text, provider, model, apiKey) {
+async function createEmbedding(text, provider, model, apiKey, embedBaseURL) {
   if (provider === 'google' || provider === 'gemini') {
     if (!apiKey) {
       console.warn('[VectorizeMemories] Google API key not set, skipping embedding');
@@ -72,7 +100,7 @@ async function createEmbedding(text, provider, model, apiKey) {
     ? 'https://api.openai.com/v1'
     : provider === 'openrouter'
       ? 'https://openrouter.ai/api/v1'
-      : process.env.LM_STUDIO_URL || 'http://127.0.0.1:1234/v1';
+      : embedBaseURL || process.env.LM_STUDIO_URL || 'http://127.0.0.1:1234/v1';
 
   const url = `${baseURL.replace(/\/+$/, '')}/v1/embeddings`;
   const headers = { 'Content-Type': 'application/json' };
@@ -213,7 +241,8 @@ async function processUser(userId, personalization, Message, Conversation, Memor
 
   const embedProvider = personalization?.embeddingProvider || 'google';
   const embedModel = personalization?.embeddingModel || 'text-embedding-004';
-  const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '';
+  const embedApiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '';
+  const embedCfg = embedProvider !== 'google' && embedProvider !== 'gemini' ? resolveEmbeddingEndpoint(embedProvider) : null;
 
   for (const [convId, msgs] of Object.entries(grouped)) {
     let convoTitle = '';
@@ -253,7 +282,7 @@ async function processUser(userId, personalization, Message, Conversation, Memor
       try {
         const key = generateKey(fact, i);
 
-        const embedding = await createEmbedding(fact, embedProvider, embedModel, geminiKey);
+        const embedding = await createEmbedding(fact, embedProvider, embedModel, embedCfg?.apiKey || embedApiKey, embedCfg?.baseURL);
         if (!embedding) {
           console.warn(`[VectorizeMemories] Failed to embed fact for user ${userId}, saving without embedding`);
           await MemoryEntry.findOneAndUpdate(

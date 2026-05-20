@@ -405,6 +405,7 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
 
     const embeddingProvider = userPref.embeddingProvider || 'google';
     let embeddingApiKey;
+    let embeddingBaseURL;
     try {
       const keyResult = await getUserKey({ userId: req.user.id, name: embeddingProvider });
       if (keyResult) {
@@ -412,6 +413,28 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       }
     } catch {
       /* no user-provided embedding key */;
+    }
+    if (!embeddingApiKey || !embeddingBaseURL) {
+      const customEp = (appConfig?.endpoints?.custom || [])
+        .find((ep) => ep.name?.toLowerCase?.() === embeddingProvider.toLowerCase());
+      if (customEp) {
+        const resolveVar = (val) => val?.replace(/\${([^}]+)}/g, (_, name) => process.env[name] || '');
+        if (!embeddingApiKey) {
+          const resolved = resolveVar(customEp.apiKey);
+          if (resolved && !resolved.startsWith('$')) {
+            embeddingApiKey = resolved;
+          }
+        }
+        if (!embeddingBaseURL) {
+          const resolved = resolveVar(customEp.baseURL);
+          if (resolved && !resolved.startsWith('$')) {
+            embeddingBaseURL = resolved;
+          }
+        }
+      }
+    }
+    if (!embeddingApiKey) {
+      embeddingApiKey = process.env.EMBEDDINGS_API_KEY;
     }
 
     const { processMemory } = require('@librechat/api');
@@ -429,6 +452,7 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       tokenLimit,
       llmConfig,
       embeddingApiKey,
+      embeddingBaseURL,
       streamId: null,
       user: createSafeUser(req.user),
     });
