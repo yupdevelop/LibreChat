@@ -76,6 +76,13 @@ const EMBEDDING_MODELS_BY_PROVIDER: Record<string, string[]> = {
     'amazon.titan-embed-text-v2:0',
     'amazon.titan-embed-embed-v1',
   ],
+  VseLLM: [
+    'openai/text-embedding-3-large',
+    'google/gemini-embedding-001',
+    'openai/text-embedding-3-small',
+    'qwen/qwen3-embedding-8b',
+    'qwen/qwen3-embedding-4b',
+  ],
 };
 
 function getEmbeddingModels(provider: string): Array<{ label: string; value: string }> {
