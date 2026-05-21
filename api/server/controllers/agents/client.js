@@ -561,7 +561,11 @@ class AgentClient extends BaseClient {
    */
   async useMemory(userMessage) {
     const user = this.options.req.user;
+    logger.warn(
+      `[EMBEDDING-DEBUG] useMemory START userId=${user?.id} memoriesPref=${user?.personalization?.memories} vectorMemoriesPref=${user?.personalization?.vectorMemories} userMessageLen=${(userMessage || '').length}`,
+    );
     if (user.personalization?.memories === false) {
+      logger.warn('[EMBEDDING-DEBUG] useMemory EARLY-RETURN: personalization.memories === false');
       return;
     }
     const hasAccess = await checkAccess({
@@ -573,7 +577,7 @@ class AgentClient extends BaseClient {
 
     if (!hasAccess) {
       logger.warn(
-        `[MEMORY-DEBUG] useMemory EARLY-RETURN: user ${user.id} lacks USE permission for memories`,
+        `[EMBEDDING-DEBUG] useMemory EARLY-RETURN: user ${user.id} lacks USE permission for memories`,
       );
       return;
     }
@@ -581,7 +585,11 @@ class AgentClient extends BaseClient {
     const memoryConfig = appConfig.memory;
     const userPref = user.personalization || {};
     const hasUserMemoryConfig = userPref.vectorMemories === true || !!(userPref.extractionProvider && userPref.extractionModel);
+    logger.warn(
+      `[EMBEDDING-DEBUG] memoryConfig=${memoryConfig ? 'exists' : 'undefined'} memoryDisabled=${memoryConfig?.disabled} hasUserMemoryConfig=${hasUserMemoryConfig}`,
+    );
     if ((!memoryConfig || memoryConfig.disabled === true) && !hasUserMemoryConfig) {
+      logger.warn('[EMBEDDING-DEBUG] useMemory EARLY-RETURN: no memory config and no user config');
       return;
     }
 
@@ -591,20 +599,37 @@ class AgentClient extends BaseClient {
     const vectorEnabled = user.personalization?.vectorMemories !== false;
     let queryEmbedding;
 
+    logger.warn(
+      `[EMBEDDING-DEBUG] vectorEnabled=${vectorEnabled} userMessageLen=${(userMessage || '').length}`,
+    );
+
     if (vectorEnabled && userMessage) {
       try {
         const embeddingProvider = user.personalization?.embeddingProvider || 'google';
         const embeddingModel = user.personalization?.embeddingModel || 'text-embedding-004';
+        logger.warn(
+          `[EMBEDDING-DEBUG] Creating embedding: provider="${embeddingProvider}" model="${embeddingModel}"`,
+        );
         const { apiKey: embeddingApiKey, baseURL: embeddingBaseURL } = await resolveEmbeddingConfig({ provider: embeddingProvider, userId, db, appConfig });
+        logger.warn(
+          `[EMBEDDING-DEBUG] Resolved config: apiKey=${embeddingApiKey ? 'present' : 'missing'} baseURL="${embeddingBaseURL || 'undefined'}"`,
+        );
         queryEmbedding = await createEmbedding(userMessage, {
           provider: embeddingProvider,
           model: embeddingModel,
           ...(embeddingApiKey ? { apiKey: embeddingApiKey } : {}),
           ...(embeddingBaseURL ? { baseURL: embeddingBaseURL } : {}),
         });
+        logger.warn(
+          `[EMBEDDING-DEBUG] Embedding created: ${queryEmbedding ? `len=${queryEmbedding.length}` : 'null'}`,
+        );
       } catch (error) {
         logger.warn('[useMemory] Embedding failed, falling back to non-vector search', error);
       }
+    } else {
+      logger.warn(
+        `[EMBEDDING-DEBUG] Skipping embedding: vectorEnabled=${vectorEnabled} userMessageLen=${(userMessage || '').length}`,
+      );
     }
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
