@@ -416,6 +416,65 @@ export const maxOutputTokensMap = {
   [EModelEndpoint.custom]: { ...modelMaxOutputs, ...deepseekMaxOutputs },
 };
 
+/**
+ * Token-count multipliers per model family. Our internal tokenizer is
+ * `o200k_base` (GPT-4o) for everything except Claude. For models with very
+ * different BPE vocabularies — especially ones trained heavily on Chinese,
+ * Russian, or code corpora — `o200k_base` systematically *under-counts*
+ * relative to the model's native tokenizer.
+ *
+ * The multiplier is applied to the budget computation in pairwise
+ * truncation so we can pre-emptively fit within the provider's real
+ * context window. It is overridden by the runtime `calibrationRatio`
+ * (collected from `usage.prompt_tokens` of previous runs) when available;
+ * this static map is the first-shot estimate before any calibration data
+ * exists in a fresh chat.
+ *
+ * Order matters: more specific patterns must come before generic ones
+ * (e.g. `kimi` before `moonshot`). Patterns are matched against the
+ * lowercased model name as substrings, not full regex anchors, so callers
+ * don't have to worry about provider prefixes like `openrouter/`.
+ */
+const tokenCountMultipliers: Array<{ pattern: RegExp; multiplier: number }> = [
+  { pattern: /(^|[^a-z])(gpt-|o1|o3|o4|chatgpt)/i, multiplier: 1.0 },
+  { pattern: /claude/i, multiplier: 1.0 },
+  { pattern: /(gemini|gemma)/i, multiplier: 1.0 },
+  { pattern: /minimax/i, multiplier: 2.1 },
+  { pattern: /(qwen|qwq)/i, multiplier: 1.4 },
+  { pattern: /(kimi|moonshot)/i, multiplier: 1.3 },
+  { pattern: /glm/i, multiplier: 1.4 },
+  { pattern: /deepseek/i, multiplier: 1.3 },
+  { pattern: /llama/i, multiplier: 1.15 },
+  { pattern: /(mistral|mixtral)/i, multiplier: 1.15 },
+  { pattern: /(grok|xai)/i, multiplier: 1.1 },
+  { pattern: /(nova|titan|jamba|cohere|command)/i, multiplier: 1.15 },
+];
+
+const DEFAULT_TOKEN_COUNT_MULTIPLIER = 1.2;
+
+/**
+ * Returns a token-count multiplier for a model based on its family.
+ * Family detection is provider-agnostic — works for both direct API
+ * clients and agent runs, and tolerates provider prefixes like
+ * `openrouter/minimax/m2.5` or `anthropic.claude-3-5-sonnet-20240620`.
+ *
+ * Returns `1.0` for known-accurate families (GPT, Claude, Gemini),
+ * a tuned value for known under-counting families, and a conservative
+ * `1.2` fallback for unknown models.
+ */
+export function getTokenCountMultiplier(modelName?: string | null): number {
+  if (!modelName || typeof modelName !== 'string') {
+    return DEFAULT_TOKEN_COUNT_MULTIPLIER;
+  }
+  const lower = modelName.toLowerCase();
+  for (const { pattern, multiplier } of tokenCountMultipliers) {
+    if (pattern.test(lower)) {
+      return multiplier;
+    }
+  }
+  return DEFAULT_TOKEN_COUNT_MULTIPLIER;
+}
+
 /** Finds the longest matching key in the tokens map via substring match. */
 export function findMatchingPattern(
   modelName: string,

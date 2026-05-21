@@ -270,6 +270,22 @@ class AgentClient extends BaseClient {
   }
 
   async buildMessages(messages, parentMessageId, _buildOptions, opts) {
+    /** Seed `contextMeta` from the parent assistant message *before* pairwise
+     *  truncation so the prior run's `calibrationRatio` can adjust the
+     *  truncation budget. Without this, the first pairwise call in a run
+     *  always sees `contextMeta = undefined` and falls back to the static
+     *  per-family multiplier. We re-seed below from `orderedMessages` once
+     *  the canonical chain is built — that path stays authoritative for
+     *  downstream consumers. */
+    if (parentMessageId) {
+      const parentResponseRaw = messages.find(
+        (m) => m?.messageId === parentMessageId && !m?.isCreatedByUser,
+      );
+      if (parentResponseRaw?.contextMeta) {
+        this.contextMeta = parentResponseRaw.contextMeta;
+      }
+    }
+
     let messagesToProcess = messages;
     if (this.options?.summarizationStrategy === 'truncate') {
       const { context } = await this.getMessagesWithinTokenLimitPairwise({

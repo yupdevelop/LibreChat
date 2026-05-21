@@ -10,6 +10,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   encodeAndFormatDocuments,
+  getTokenCountMultiplier,
 } = require('@librechat/api');
 const {
   Constants,
@@ -442,17 +443,59 @@ class BaseClient {
     const effectiveMaxTokens = this.options?.summarizationThreshold ?? maxContextTokens ?? this.maxContextTokens;
     const instructionsTokenCount = instructions?.tokenCount ?? 0;
     const messages = [..._messages];
-    
+
+    /** Adjust budget for tokenizer mismatch.
+     *
+     * `o200k_base` (used everywhere except Claude) systematically under-counts
+     * tokens for models with different BPE vocabularies (MiniMax, Qwen, Kimi,
+     * GLM, DeepSeek, etc.). If left uncorrected, the pairwise loop happily
+     * "fits" 280k real tokens into a 130k budget and the provider rejects
+     * the request with a 400.
+     *
+     * Two sources of correction, in priority order:
+     *   1. `contextMeta.calibrationRatio` — measured ratio of real
+     *      `usage.prompt_tokens` to our estimate from the previous run in
+     *      the same conversation. Encoding-validated upstream so we know
+     *      it applies to the current model. Only honored when > 1
+     *      (we only correct *up*; over-counting is harmless to budgeting).
+     *   2. `getTokenCountMultiplier(model)` — static per-family fallback
+     *      for the first run in a fresh chat where no calibration data
+     *      exists yet.
+     *
+     * `SAFETY_MARGIN` covers provider-side framing (BOS/EOS, tool schema
+     * forwarding, JSON serialization overhead) that even a perfect token
+     * count for the message bodies cannot anticipate.
+     */
+    const SAFETY_MARGIN = 1.05;
+    const model = this.modelOptions?.model ?? this.model;
+    const staticMultiplier = getTokenCountMultiplier(model);
+    const currentEncoding = typeof this.getEncoding === 'function' ? this.getEncoding() : undefined;
+    const calibrationRatio =
+      this.contextMeta &&
+      (currentEncoding == null || this.contextMeta.encoding === currentEncoding) &&
+      typeof this.contextMeta.calibrationRatio === 'number' &&
+      this.contextMeta.calibrationRatio > 1
+        ? this.contextMeta.calibrationRatio
+        : 0;
+    const adjustedMultiplier = Math.max(calibrationRatio, staticMultiplier, 1) * SAFETY_MARGIN;
+    const adjustedBudget = Math.max(1024, Math.floor(effectiveMaxTokens / adjustedMultiplier));
+
     let totalTokens = 3 + instructionsTokenCount;
     messages.forEach(msg => {
       totalTokens += msg.tokenCount ?? 0;
     });
 
+    if (totalTokens > adjustedBudget) {
+      logger.info(
+        `[BaseClient][pairwiseTruncate] model="${model}" threshold=${effectiveMaxTokens} multiplier=${adjustedMultiplier.toFixed(3)} (static=${staticMultiplier} calibration=${calibrationRatio || 'n/a'}) -> budget=${adjustedBudget}, current=${totalTokens}`,
+      );
+    }
+
     const isSystem = (msg) => msg?.role === 'system' || msg?.sender === 'System';
     const isUser = (msg) => msg?.isCreatedByUser || msg?.role === 'user' || msg?.sender === 'User' || msg?.sender?.toLowerCase() === 'user';
     const isAssistant = (msg) => !isUser(msg) && !isSystem(msg);
 
-    while (totalTokens > effectiveMaxTokens && messages.length > 0) {
+    while (totalTokens > adjustedBudget && messages.length > 0) {
       const firstMsg = messages[0];
       
       if (isUser(firstMsg)) {
