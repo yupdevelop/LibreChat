@@ -201,6 +201,12 @@ export const createMemoryTool = ({
           ...(embeddingBaseURL ? { baseURL: embeddingBaseURL } : {}),
         });
 
+        if (!embedding) {
+          logger.warn(
+            `[MemoryAgent] Memory "${key}" saved without embedding | userId=${userId} provider=${embeddingProvider || 'google'} model=${embeddingModel || 'text-embedding-004'} baseURL=${embeddingBaseURL || 'default'}`,
+          );
+        }
+
         const result = await setMemory({ userId, key, value, tokenCount, embedding });
         if (result.ok) {
           logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);

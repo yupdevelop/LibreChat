@@ -7,6 +7,7 @@ const {
   resolveMemoryLLMConfig,
 } = require('@librechat/api');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 const {
   getAllUserMemories,
   toggleUserMemories,
@@ -396,6 +397,17 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
     const extractionProvider = userPref.extractionProvider || '';
     const extractionModel = userPref.extractionModel || '';
 
+    if (!extractionProvider || !extractionModel) {
+      return res.status(400).json({
+        extracted: false,
+        error: 'Memory extraction provider and model must be configured in user Personalization settings.',
+        diagnostics: {
+          extractionProvider: extractionProvider || null,
+          extractionModel: extractionModel || null,
+        },
+      });
+    }
+
     const llmConfig = await resolveMemoryLLMConfig({
       req,
       provider: extractionProvider,
@@ -403,7 +415,32 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       db: { getUserKey, getUserKeyValues },
     });
 
-    const embeddingProvider = userPref.embeddingProvider || 'google';
+    if (!llmConfig) {
+      logger.error(
+        `[MemoryExtract] Failed to resolve extraction config | userId=${req.user.id} provider=${extractionProvider} model=${extractionModel}`,
+      );
+      return res.status(500).json({
+        extracted: false,
+        error: 'Failed to resolve memory extraction provider configuration.',
+        diagnostics: {
+          extractionProvider,
+          extractionModel,
+        },
+      });
+    }
+
+    const embeddingProvider = userPref.embeddingProvider || '';
+    const embeddingModel = userPref.embeddingModel || '';
+    if (!embeddingProvider || !embeddingModel) {
+      return res.status(400).json({
+        extracted: false,
+        error: 'Memory embedding provider and model must be configured in user Personalization settings.',
+        diagnostics: {
+          embeddingProvider: embeddingProvider || null,
+          embeddingModel: embeddingModel || null,
+        },
+      });
+    }
     let embeddingApiKey;
     let embeddingBaseURL;
     try {
@@ -457,14 +494,42 @@ router.post('/extract', checkMemoryCreate, configMiddleware, async (req, res) =>
       user: createSafeUser(req.user),
     });
 
+    const attachments = result || [];
+    if (attachments.length === 0) {
+      logger.warn(
+        `[MemoryExtract] Extraction produced no memory tool artifacts | userId=${req.user.id} messagesProcessed=${recentMessages.length} extractionProvider=${extractionProvider} extractionModel=${extractionModel} embeddingProvider=${embeddingProvider} embeddingModel=${embeddingModel}`,
+      );
+      return res.status(502).json({
+        extracted: false,
+        messagesProcessed: recentMessages.length,
+        attachments,
+        error: 'Memory extraction model completed without saving any memories.',
+        diagnostics: {
+          extractionProvider,
+          extractionModel,
+          embeddingProvider,
+          embeddingModel,
+        },
+      });
+    }
+
     res.json({
       extracted: true,
       messagesProcessed: recentMessages.length,
-      attachments: result || [],
+      attachments,
+      diagnostics: {
+        extractionProvider,
+        extractionModel,
+        embeddingProvider,
+        embeddingModel,
+      },
     });
   } catch (error) {
-    console.error('[MemoryExtract] Error:', error);
-    res.status(500).json({ error: error.message || 'Memory extraction failed' });
+    logger.error('[MemoryExtract] Error:', error);
+    res.status(500).json({
+      extracted: false,
+      error: error.message || 'Memory extraction failed',
+    });
   }
 });
 

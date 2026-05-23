@@ -39,6 +39,13 @@ function setCache(key: string, embedding: number[], isQuery: boolean): void {
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+function getOpenAICompatibleEmbeddingsUrl(baseURL: string): string {
+  const normalizedBaseURL = baseURL.replace(/\/+$/, '');
+  return normalizedBaseURL.endsWith('/v1')
+    ? `${normalizedBaseURL}/embeddings`
+    : `${normalizedBaseURL}/v1/embeddings`;
+}
+
 async function embedGemini(
   text: string,
   model: string,
@@ -70,7 +77,7 @@ async function embedOpenAICompatible(
   apiKey: string | undefined,
   baseURL: string,
 ): Promise<number[]> {
-  const url = `${baseURL.replace(/\/+$/, '')}/v1/embeddings`;
+  const url = getOpenAICompatibleEmbeddingsUrl(baseURL);
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;

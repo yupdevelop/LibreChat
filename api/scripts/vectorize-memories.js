@@ -54,6 +54,34 @@ function resolveEmbeddingEndpoint(provider) {
   };
 }
 
+function getOpenAICompatibleUrl(baseURL, pathName) {
+  const normalizedBaseURL = baseURL.replace(/\/+$/, '');
+  const normalizedPath = pathName.replace(/^\/+/, '');
+  return normalizedBaseURL.endsWith('/v1')
+    ? `${normalizedBaseURL}/${normalizedPath}`
+    : `${normalizedBaseURL}/v1/${normalizedPath}`;
+}
+
+function resolveCustomEndpoint(provider) {
+  const config = loadLibreChatConfig();
+  return (config?.endpoints?.custom || [])
+    .find((ep) => ep.name?.toLowerCase?.() === provider.toLowerCase());
+}
+
+function resolveEndpointConfig(provider) {
+  const customEp = resolveCustomEndpoint(provider);
+  if (!customEp) return null;
+  const resolveVar = (val) => {
+    if (!val || typeof val !== 'string') return val;
+    return val.replace(/\${([^}]+)}/g, (_, name) => process.env[name] || '');
+  };
+  const resolvedApiKey = resolveVar(customEp.apiKey);
+  return {
+    baseURL: resolveVar(customEp.baseURL),
+    apiKey: resolvedApiKey && !resolvedApiKey.startsWith('$') ? resolvedApiKey : undefined,
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -102,7 +130,7 @@ async function createEmbedding(text, provider, model, apiKey, embedBaseURL) {
       ? 'https://openrouter.ai/api/v1'
       : embedBaseURL || process.env.LM_STUDIO_URL || 'http://127.0.0.1:1234/v1';
 
-  const url = `${baseURL.replace(/\/+$/, '')}/v1/embeddings`;
+  const url = getOpenAICompatibleUrl(baseURL, 'embeddings');
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
@@ -113,7 +141,8 @@ async function createEmbedding(text, provider, model, apiKey, embedBaseURL) {
   });
 
   if (!response.ok) {
-    console.warn(`[VectorizeMemories] Embedding API error ${response.status} for ${provider}`);
+    const text = await response.text();
+    console.warn(`[VectorizeMemories] Embedding API error ${response.status} for ${provider}: ${text.substring(0, 500)}`);
     return null;
   }
 
@@ -137,7 +166,7 @@ async function getSimilarMemory(embedding, existingMemories) {
   return bestScore >= DUPLICATE_THRESHOLD ? best : null;
 }
 
-async function extractFacts(conversation) {
+async function extractFacts(conversation, provider, model, apiKey, baseURL) {
   const prompt = `Extract important facts about the user from this conversation.
 
 RULES:
@@ -153,9 +182,11 @@ ${conversation}
 
 Facts:`;
 
-  const url = process.env.EXTRACTION_API_URL || 'http://127.0.0.1:1234/v1/chat/completions';
-  const model = process.env.EXTRACTION_MODEL || 'gpt-4.1-mini';
-  const apiKey = process.env.EXTRACTION_API_KEY || '';
+  if (!provider || !model) {
+    throw new Error('Extraction provider and model are required in user Personalization settings');
+  }
+
+  const url = getOpenAICompatibleUrl(baseURL, 'chat/completions');
 
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
@@ -188,6 +219,10 @@ Facts:`;
   const data = await response.json();
   const content = data.choices?.[0]?.message?.content || '';
 
+  if (!content.trim()) {
+    throw new Error(`Extraction model returned empty content for provider=${provider} model=${model}`);
+  }
+
   return content
     .split('\n')
     .map((l) => l.trim())
@@ -201,7 +236,7 @@ function formatConversation(messages, convoTitle) {
   if (convoTitle) lines.push(`# ${convoTitle}`);
   for (const msg of messages) {
     const role = msg.isCreatedByUser ? 'User' : 'Assistant';
-    const text = typeof msg.content === 'string' ? msg.content : '';
+    const text = typeof msg.text === 'string' ? msg.text : typeof msg.content === 'string' ? msg.content : '';
     if (text) lines.push(`${role}: ${text}`);
   }
   return lines.join('\n\n');
@@ -239,10 +274,34 @@ async function processUser(userId, personalization, Message, Conversation, Memor
     grouped[cid].push(msg);
   }
 
-  const embedProvider = personalization?.embeddingProvider || 'google';
-  const embedModel = personalization?.embeddingModel || 'text-embedding-004';
-  const embedApiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '';
-  const embedCfg = embedProvider !== 'google' && embedProvider !== 'gemini' ? resolveEmbeddingEndpoint(embedProvider) : null;
+  const extractionProvider = personalization?.extractionProvider || '';
+  const extractionModel = personalization?.extractionModel || '';
+  const embedProvider = personalization?.embeddingProvider || '';
+  const embedModel = personalization?.embeddingModel || '';
+
+  if (!extractionProvider || !extractionModel || !embedProvider || !embedModel) {
+    console.warn(`[VectorizeMemories] User ${userId}: missing Personalization settings, skipping`, {
+      extractionProvider: extractionProvider || null,
+      extractionModel: extractionModel || null,
+      embeddingProvider: embedProvider || null,
+      embeddingModel: embedModel || null,
+    });
+    return;
+  }
+
+  const extractionCfg = resolveEndpointConfig(extractionProvider);
+  const embedCfg = embedProvider === 'google' || embedProvider === 'gemini'
+    ? { apiKey: process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '', baseURL: undefined }
+    : resolveEmbeddingEndpoint(embedProvider);
+
+  if (!extractionCfg?.baseURL) {
+    console.warn(`[VectorizeMemories] User ${userId}: extraction endpoint "${extractionProvider}" not found in librechat.yaml, skipping`);
+    return;
+  }
+
+  if (!embedCfg?.apiKey) {
+    console.warn(`[VectorizeMemories] User ${userId}: embedding API key missing for provider "${embedProvider}"`);
+  }
 
   for (const [convId, msgs] of Object.entries(grouped)) {
     let convoTitle = '';
@@ -258,7 +317,13 @@ async function processUser(userId, personalization, Message, Conversation, Memor
 
     let facts;
     try {
-      facts = await withRetry(() => extractFacts(dialog));
+      facts = await withRetry(() => extractFacts(
+        dialog,
+        extractionProvider,
+        extractionModel,
+        extractionCfg.apiKey,
+        extractionCfg.baseURL,
+      ));
     } catch (err) {
       if (err.isQuota) {
         console.warn(`[VectorizeMemories] User ${userId}: quota exceeded, will retry next cycle`);
@@ -282,7 +347,7 @@ async function processUser(userId, personalization, Message, Conversation, Memor
       try {
         const key = generateKey(fact, i);
 
-        const embedding = await createEmbedding(fact, embedProvider, embedModel, embedCfg?.apiKey || embedApiKey, embedCfg?.baseURL);
+        const embedding = await createEmbedding(fact, embedProvider, embedModel, embedCfg?.apiKey, embedCfg?.baseURL);
         if (!embedding) {
           console.warn(`[VectorizeMemories] Failed to embed fact for user ${userId}, saving without embedding`);
           await MemoryEntry.findOneAndUpdate(
