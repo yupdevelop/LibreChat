@@ -82,6 +82,16 @@ function resolveCustomEndpoint(provider) {
 }
 
 function resolveEndpointConfig(provider) {
+  if (provider === 'google' || provider === 'gemini') {
+    const apiKey = process.env.GOOGLE_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || '';
+    const baseURL = process.env.GOOGLE_REVERSE_PROXY || 'https://generativelanguage.googleapis.com';
+    return {
+      baseURL,
+      apiKey: apiKey === 'user_provided' ? '' : apiKey,
+      nativeGoogle: true,
+    };
+  }
+
   const customEp = resolveCustomEndpoint(provider);
   if (!customEp) return null;
   const resolveVar = (val) => {
@@ -199,6 +209,10 @@ Facts:`;
     throw new Error('Extraction provider and model are required in user Personalization settings');
   }
 
+  if (provider === 'google' || provider === 'gemini') {
+    return extractFactsWithGoogle(provider, model, apiKey, baseURL, prompt);
+  }
+
   const url = getOpenAICompatibleUrl(baseURL, 'chat/completions');
 
   const headers = { 'Content-Type': 'application/json' };
@@ -237,6 +251,68 @@ Facts:`;
 
   if (!content.trim()) {
     throw new Error(`Extraction model returned empty content for provider=${provider} model=${model}`);
+  }
+
+  return content
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('FACT:'))
+    .map((l) => l.replace(/^FACT:\s*/i, '').trim())
+    .filter((f) => f.length > 0 && f.toLowerCase() !== 'nothing');
+}
+
+async function extractFactsWithGoogle(provider, model, apiKey, baseURL, prompt) {
+  if (!apiKey) {
+    throw new Error(`Google API key is required for cron extraction provider=${provider}`);
+  }
+
+  const normalizedBaseURL = baseURL.replace(/\/+$/, '');
+  const url = `${normalizedBaseURL}/v1beta/models/${model}:generateContent`;
+  stats.extractionCalls += 1;
+  console.log(`[VectorizeMemories] Calling Google extraction LLM provider=${provider} model=${model} url=${url}`);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+    },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [
+          {
+            text: 'You extract important facts from conversations. Return only facts prefixed with FACT:, nothing else.',
+          },
+        ],
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: prompt }],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 2000,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    const isQuota = response.status === 429 || /quota|rate\s*limit/i.test(text);
+    const err = new Error(`Google LLM API error ${response.status}: ${text.substring(0, 200)}`);
+    err.isQuota = isQuota;
+    throw err;
+  }
+
+  const data = await response.json();
+  const content = (data.candidates?.[0]?.content?.parts || [])
+    .map((part) => part.text || '')
+    .join('\n');
+
+  if (!content.trim()) {
+    throw new Error(`Google extraction model returned empty content for provider=${provider} model=${model}`);
   }
 
   return content
