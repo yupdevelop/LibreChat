@@ -5,6 +5,20 @@ const { logger } = require('@librechat/data-schemas');
 
 let initialized = false;
 
+function logProcessOutput(level, prefix, output) {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    logger[level](`${prefix}: <empty>`);
+    return;
+  }
+
+  lines.forEach((line) => logger[level](`${prefix}: ${line}`));
+}
+
 function initializeMemoryCron() {
   if (initialized) return;
   initialized = true;
@@ -16,10 +30,14 @@ function initializeMemoryCron() {
     logger.info(`[MemoryCron] Starting memory vectorization (${reason})`);
     execFile('node', [scriptPath], (err, stdout, stderr) => {
       if (stdout) {
-        logger.info(`[MemoryCron] vectorize-memories stdout:\n${stdout.trim()}`);
+        logProcessOutput('info', '[MemoryCron] vectorize-memories stdout', stdout);
+      } else {
+        logger.info('[MemoryCron] vectorize-memories stdout: <empty>');
       }
       if (stderr) {
-        logger.warn(`[MemoryCron] vectorize-memories stderr:\n${stderr.trim()}`);
+        logProcessOutput('warn', '[MemoryCron] vectorize-memories stderr', stderr);
+      } else {
+        logger.info('[MemoryCron] vectorize-memories stderr: <empty>');
       }
       if (err) {
         logger.error('[MemoryCron] Error running vectorize-memories:', err.message);

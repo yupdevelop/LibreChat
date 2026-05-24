@@ -28,6 +28,19 @@ const mongoose = require('mongoose');
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://localhost:27017/LibreChat';
 const GRACE_PERIOD_MS = 3600000;
 const DUPLICATE_THRESHOLD = 0.92;
+const stats = {
+  usersProcessed: 0,
+  usersSkippedNoMessages: 0,
+  usersSkippedSettings: 0,
+  conversationsProcessed: 0,
+  conversationsSkippedShort: 0,
+  extractionCalls: 0,
+  factsExtracted: 0,
+  factsSaved: 0,
+  factsSavedWithoutEmbedding: 0,
+  duplicateFacts: 0,
+  extractionErrors: 0,
+};
 
 let _cachedConfig = null;
 function loadLibreChatConfig() {
@@ -191,6 +204,9 @@ Facts:`;
   const headers = { 'Content-Type': 'application/json' };
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
+  stats.extractionCalls += 1;
+  console.log(`[VectorizeMemories] Calling extraction LLM provider=${provider} model=${model} url=${url}`);
+
   const response = await fetch(url, {
     method: 'POST',
     headers,
@@ -248,12 +264,14 @@ function generateKey(fact, index) {
 }
 
 async function processUser(userId, personalization, Message, Conversation, MemoryEntry) {
+  stats.usersProcessed += 1;
   if (personalization?.vectorMemories === false) {
     console.log(`[VectorizeMemories] User ${userId}: vector memory disabled, skipping`);
     return;
   }
 
   const cutoff = new Date(Date.now() - GRACE_PERIOD_MS);
+  console.log(`[VectorizeMemories] User ${userId}: scanning messages since ${cutoff.toISOString()}`);
   const messages = await Message.find({
     user: userId,
     createdAt: { $gte: cutoff },
@@ -263,9 +281,12 @@ async function processUser(userId, personalization, Message, Conversation, Memor
     .lean();
 
   if (messages.length === 0) {
+    stats.usersSkippedNoMessages += 1;
     console.log(`[VectorizeMemories] User ${userId}: no new messages`);
     return;
   }
+
+  console.log(`[VectorizeMemories] User ${userId}: found ${messages.length} user messages`);
 
   const grouped = {};
   for (const msg of messages) {
@@ -279,7 +300,10 @@ async function processUser(userId, personalization, Message, Conversation, Memor
   const embedProvider = personalization?.embeddingProvider || '';
   const embedModel = personalization?.embeddingModel || '';
 
+  console.log(`[VectorizeMemories] User ${userId}: personalization extraction=${extractionProvider || '<empty>'}/${extractionModel || '<empty>'}, embedding=${embedProvider || '<empty>'}/${embedModel || '<empty>'}`);
+
   if (!extractionProvider || !extractionModel || !embedProvider || !embedModel) {
+    stats.usersSkippedSettings += 1;
     console.warn(`[VectorizeMemories] User ${userId}: missing Personalization settings, skipping`, {
       extractionProvider: extractionProvider || null,
       extractionModel: extractionModel || null,
@@ -295,9 +319,12 @@ async function processUser(userId, personalization, Message, Conversation, Memor
     : resolveEmbeddingEndpoint(embedProvider);
 
   if (!extractionCfg?.baseURL) {
+    stats.usersSkippedSettings += 1;
     console.warn(`[VectorizeMemories] User ${userId}: extraction endpoint "${extractionProvider}" not found in librechat.yaml, skipping`);
     return;
   }
+
+  console.log(`[VectorizeMemories] User ${userId}: resolved extraction baseURL=${extractionCfg.baseURL}, hasApiKey=${Boolean(extractionCfg.apiKey)}, embeddingBaseURL=${embedCfg?.baseURL || '<default>'}, hasEmbeddingApiKey=${Boolean(embedCfg?.apiKey)}`);
 
   if (!embedCfg?.apiKey) {
     console.warn(`[VectorizeMemories] User ${userId}: embedding API key missing for provider "${embedProvider}"`);
@@ -311,8 +338,13 @@ async function processUser(userId, personalization, Message, Conversation, Memor
     } catch { }
 
     const dialog = formatConversation(msgs, convoTitle);
-    if (dialog.length < 20) continue;
+    if (dialog.length < 20) {
+      stats.conversationsSkippedShort += 1;
+      console.log(`[VectorizeMemories] User ${userId}: conversation ${convId} skipped, dialog too short (${dialog.length} chars)`);
+      continue;
+    }
 
+    stats.conversationsProcessed += 1;
     console.log(`[VectorizeMemories] User ${userId}: extracting from conversation ${convId} (${msgs.length} msgs)`);
 
     let facts;
@@ -329,6 +361,7 @@ async function processUser(userId, personalization, Message, Conversation, Memor
         console.warn(`[VectorizeMemories] User ${userId}: quota exceeded, will retry next cycle`);
         throw err;
       }
+      stats.extractionErrors += 1;
       console.error(`[VectorizeMemories] User ${userId}: extraction error:`, err.message);
       continue;
     }
@@ -337,6 +370,9 @@ async function processUser(userId, personalization, Message, Conversation, Memor
       console.log(`[VectorizeMemories] User ${userId}: no new facts from ${convId}`);
       continue;
     }
+
+    stats.factsExtracted += facts.length;
+    console.log(`[VectorizeMemories] User ${userId}: extracted ${facts.length} facts from ${convId}`);
 
     const existingMemories = await MemoryEntry.find({ userId, embedding: { $exists: true, $ne: [] } })
       .select('+embedding')
@@ -355,12 +391,14 @@ async function processUser(userId, personalization, Message, Conversation, Memor
             { $set: { value: fact, tokenCount: Math.ceil(fact.length / 4), updated_at: new Date() } },
             { upsert: true, new: true },
           );
+          stats.factsSavedWithoutEmbedding += 1;
           continue;
         }
 
         const existing = await getSimilarMemory(embedding, existingMemories);
         if (existing) {
           await MemoryEntry.findByIdAndUpdate(existing._id, { $set: { updated_at: new Date() } });
+          stats.duplicateFacts += 1;
           console.log(`[VectorizeMemories] Merged duplicate for user ${userId}: "${fact.substring(0, 60)}..."`);
           continue;
         }
@@ -378,6 +416,7 @@ async function processUser(userId, personalization, Message, Conversation, Memor
           { upsert: true, new: true },
         );
 
+        stats.factsSaved += 1;
         console.log(`[VectorizeMemories] Saved fact for user ${userId}: "${fact.substring(0, 60)}..."`);
       } catch (err) {
         console.error(`[VectorizeMemories] Error saving fact:`, err.message);
@@ -426,6 +465,7 @@ async function main() {
   }
 
   await mongoose.disconnect();
+  console.log(`[VectorizeMemories] Summary: ${JSON.stringify(stats)}`);
   console.log('[VectorizeMemories] Extraction cycle complete');
 }
 
