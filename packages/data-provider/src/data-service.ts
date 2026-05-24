@@ -1,4 +1,4 @@
-import type { AxiosResponse } from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 import type * as t from './types';
 import * as endpoints from './api-endpoints';
 import * as a from './types/assistants';
@@ -1253,6 +1253,68 @@ export const createMemory = (data: {
 export const extractMemory = (limit?: number): Promise<{ extracted: boolean; messagesProcessed: number; attachments: any[] }> => {
   const params = limit ? `?limit=${limit}` : '';
   return request.post(endpoints.memoriesExtract() + params);
+};
+
+export type ReembedMemoriesProgress = {
+  status: 'started' | 'progress' | 'completed' | 'error';
+  processed?: number;
+  total?: number;
+  updated?: number;
+  failed?: number;
+  key?: string;
+  error?: string;
+  diagnostics?: Record<string, unknown>;
+};
+
+export const reembedMemories = async (
+  onProgress: (progress: ReembedMemoriesProgress) => void,
+): Promise<ReembedMemoriesProgress> => {
+  const response = await fetch(endpoints.memoriesReembed(), {
+    method: 'POST',
+    headers: {
+      Authorization: String(axios.defaults.headers.common.Authorization || ''),
+    },
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to recalculate memory embeddings: ${response.status}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let lastProgress: ReembedMemoriesProgress = { status: 'started', processed: 0, total: 0 };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+      const progress = JSON.parse(line) as ReembedMemoriesProgress;
+      lastProgress = progress;
+      onProgress(progress);
+      if (progress.status === 'error') {
+        throw new Error(progress.error || 'Memory embedding recalculation failed');
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const progress = JSON.parse(buffer) as ReembedMemoriesProgress;
+    lastProgress = progress;
+    onProgress(progress);
+  }
+
+  return lastProgress;
 };
 
 export function searchPrincipals(

@@ -85,7 +85,7 @@ async function embedOpenAICompatible(
 
   const response = await axios.post(
     url,
-    { model, input: text },
+    { model, input: text, encoding_format: 'float' },
     { headers, timeout: 15000 },
   );
 

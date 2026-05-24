@@ -42,6 +42,18 @@ const stats = {
   extractionErrors: 0,
 };
 
+function isRetryableStatus(status) {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function getRetryDelayMs(err, attempt) {
+  if (err.isQuota) {
+    return Math.min(Math.pow(2, attempt) * 120000, 600000);
+  }
+
+  return Math.min(Math.pow(2, attempt - 1) * 5000, 30000);
+}
+
 let _cachedConfig = null;
 function loadLibreChatConfig() {
   if (_cachedConfig) return _cachedConfig;
@@ -160,7 +172,7 @@ async function createEmbedding(text, provider, model, apiKey, embedBaseURL) {
   const response = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ model, input: text }),
+    body: JSON.stringify({ model, input: text, encoding_format: 'float' }),
   });
 
   if (!response.ok) {
@@ -243,6 +255,7 @@ Facts:`;
     const isQuota = response.status === 429 || /quota|rate\s*limit/i.test(text);
     const err = new Error(`LLM API error ${response.status}: ${text.substring(0, 200)}`);
     err.isQuota = isQuota;
+    err.isRetryable = isRetryableStatus(response.status) || isQuota;
     throw err;
   }
 
@@ -303,6 +316,7 @@ async function extractFactsWithGoogle(provider, model, apiKey, baseURL, prompt) 
     const isQuota = response.status === 429 || /quota|rate\s*limit/i.test(text);
     const err = new Error(`Google LLM API error ${response.status}: ${text.substring(0, 200)}`);
     err.isQuota = isQuota;
+    err.isRetryable = isRetryableStatus(response.status) || isQuota;
     throw err;
   }
 
@@ -501,14 +515,14 @@ async function processUser(userId, personalization, Message, Conversation, Memor
   }
 }
 
-async function withRetry(fn, maxRetries = 12, baseDelayMs = 120000) {
+async function withRetry(fn, maxRetries = 5) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (err) {
-      if (!err.isQuota || attempt === maxRetries) throw err;
-      const delay = Math.min(Math.pow(2, attempt) * baseDelayMs, 600000);
-      console.warn(`[VectorizeMemories] Quota, retry ${attempt}/${maxRetries} in ${Math.round(delay / 1000)}s`);
+      if (!err.isRetryable || attempt === maxRetries) throw err;
+      const delay = getRetryDelayMs(err, attempt);
+      console.warn(`[VectorizeMemories] Retryable extraction error, retry ${attempt}/${maxRetries} in ${Math.round(delay / 1000)}s: ${err.message}`);
       await sleep(delay);
     }
   }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Switch, useToastContext } from '@librechat/client';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import { EModelEndpoint, alternateName } from 'librechat-data-provider';
+import { EModelEndpoint, alternateName, dataService } from 'librechat-data-provider';
 import {
   useGetUserQuery,
   useUpdateMemoryPreferencesMutation,
@@ -120,6 +120,8 @@ export default function Personalization({
   const [embeddingModel, setEmbeddingModel] = useState('text-embedding-004');
   const [extractionProvider, setExtractionProvider] = useState('');
   const [extractionModel, setExtractionModel] = useState('');
+  const [isReembedding, setIsReembedding] = useState(false);
+  const [reembedProgress, setReembedProgress] = useState<{ processed: number; total: number } | null>(null);
 
   const updateMemoryPreferencesMutation = useUpdateMemoryPreferencesMutation({
     onSuccess: () => {
@@ -209,6 +211,29 @@ export default function Personalization({
       extractionProvider,
       extractionModel,
     });
+  };
+
+  const handleReembedMemories = async () => {
+    setIsReembedding(true);
+    setReembedProgress({ processed: 0, total: 0 });
+    try {
+      const result = await dataService.reembedMemories((progress) => {
+        if (typeof progress.processed === 'number' && typeof progress.total === 'number') {
+          setReembedProgress({ processed: progress.processed, total: progress.total });
+        }
+      });
+      showToast({
+        message: `Embeddings recalculated: ${result.updated ?? 0}/${result.total ?? 0}`,
+        status: result.failed ? 'warning' : 'success',
+      });
+    } catch {
+      showToast({
+        message: 'Failed to recalculate memory embeddings',
+        status: 'error',
+      });
+    } finally {
+      setIsReembedding(false);
+    }
   };
 
   if (!hasAnyPersonalizationFeature) {
@@ -404,6 +429,21 @@ export default function Personalization({
                     ? localize('com_ui_extracting')
                     : localize('com_ui_extract_now')}
                 </button>
+              </div>
+
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  className="px-4 py-2 text-sm text-text-primary bg-surface-primary border border-border-medium rounded hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleReembedMemories}
+                  disabled={isReembedding || !vectorMemories}
+                >
+                  {isReembedding ? 'Recalculating embeddings' : 'Recalculate memory embeddings'}
+                </button>
+                {reembedProgress && (
+                  <span className="text-xs text-text-secondary">
+                    {reembedProgress.processed}/{reembedProgress.total}
+                  </span>
+                )}
               </div>
             </>
           )}

@@ -3,9 +3,11 @@ const {
   Tokenizer,
   generateCheckAccess,
   createSafeUser,
+  createEmbedding,
   extractMemoryInstructions,
   resolveMemoryLLMConfig,
 } = require('@librechat/api');
+const mongoose = require('mongoose');
 const { PermissionTypes, Permissions } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -25,6 +27,53 @@ const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const router = express.Router();
 
 const memoryPayloadLimit = express.json({ limit: '100kb' });
+
+async function resolveEmbeddingConfig({ req, embeddingProvider }) {
+  let embeddingApiKey;
+  let embeddingBaseURL;
+  const appConfig = req.config;
+
+  if (embeddingProvider === 'google' || embeddingProvider === 'gemini') {
+    return {
+      apiKey: process.env.GOOGLE_KEY || process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY,
+      baseURL: undefined,
+    };
+  }
+
+  try {
+    const keyResult = await getUserKey({ userId: req.user.id, name: embeddingProvider });
+    if (keyResult) {
+      embeddingApiKey = keyResult;
+    }
+  } catch {
+    /* no user-provided embedding key */;
+  }
+
+  const customEp = (appConfig?.endpoints?.custom || [])
+    .find((ep) => ep.name?.toLowerCase?.() === embeddingProvider.toLowerCase());
+  if (customEp) {
+    const resolveVar = (val) => val?.replace(/\${([^}]+)}/g, (_, name) => process.env[name] || '');
+    if (!embeddingApiKey) {
+      const resolved = resolveVar(customEp.apiKey);
+      if (resolved && !resolved.startsWith('$')) {
+        embeddingApiKey = resolved;
+      }
+    }
+    const resolvedBaseURL = resolveVar(customEp.baseURL);
+    if (resolvedBaseURL && !resolvedBaseURL.startsWith('$')) {
+      embeddingBaseURL = resolvedBaseURL;
+    }
+  }
+
+  if (!embeddingApiKey) {
+    embeddingApiKey = process.env.EMBEDDINGS_API_KEY;
+  }
+
+  return {
+    apiKey: embeddingApiKey,
+    baseURL: embeddingBaseURL,
+  };
+}
 
 const checkMemoryRead = generateCheckAccess({
   permissionType: PermissionTypes.MEMORIES,
@@ -238,6 +287,102 @@ router.patch('/vector-preferences', checkMemoryOptOut, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/reembed', checkMemoryUpdate, configMiddleware, async (req, res) => {
+  const userPref = req.user.personalization || {};
+  const embeddingProvider = userPref.embeddingProvider || '';
+  const embeddingModel = userPref.embeddingModel || '';
+
+  if (!embeddingProvider || !embeddingModel) {
+    return res.status(400).json({
+      error: 'Memory embedding provider and model must be configured in user Personalization settings.',
+      diagnostics: {
+        embeddingProvider: embeddingProvider || null,
+        embeddingModel: embeddingModel || null,
+      },
+    });
+  }
+
+  const MemoryEntry = mongoose.models.MemoryEntry;
+  if (!MemoryEntry) {
+    return res.status(500).json({ error: 'MemoryEntry model is not available.' });
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    'X-Accel-Buffering': 'no',
+  });
+
+  const sendProgress = (payload) => {
+    res.write(`${JSON.stringify(payload)}\n`);
+  };
+
+  try {
+    const memories = await MemoryEntry.find({ userId: req.user.id })
+      .select('_id key value')
+      .sort({ updated_at: -1 })
+      .lean();
+    const total = memories.length;
+    let processed = 0;
+    let updated = 0;
+    let failed = 0;
+    const embeddingConfig = await resolveEmbeddingConfig({ req, embeddingProvider });
+
+    sendProgress({
+      status: 'started',
+      processed,
+      total,
+      updated,
+      failed,
+      diagnostics: {
+        embeddingProvider,
+        embeddingModel,
+        hasApiKey: Boolean(embeddingConfig.apiKey),
+        baseURL: embeddingConfig.baseURL || null,
+      },
+    });
+
+    for (const memory of memories) {
+      if (!memory.value || typeof memory.value !== 'string') {
+        processed += 1;
+        failed += 1;
+        sendProgress({ status: 'progress', processed, total, updated, failed, key: memory.key });
+        continue;
+      }
+
+      const embedding = await createEmbedding(memory.value, {
+        provider: embeddingProvider,
+        model: embeddingModel,
+        ...(embeddingConfig.apiKey ? { apiKey: embeddingConfig.apiKey } : {}),
+        ...(embeddingConfig.baseURL ? { baseURL: embeddingConfig.baseURL } : {}),
+      });
+
+      processed += 1;
+      if (embedding) {
+        await MemoryEntry.updateOne(
+          { _id: memory._id, userId: req.user.id },
+          { $set: { embedding, updated_at: new Date() } },
+        );
+        updated += 1;
+      } else {
+        failed += 1;
+      }
+
+      sendProgress({ status: 'progress', processed, total, updated, failed, key: memory.key });
+    }
+
+    sendProgress({ status: 'completed', processed, total, updated, failed });
+    res.end();
+  } catch (error) {
+    logger.error('[MemoryReembed] Error:', error);
+    sendProgress({
+      status: 'error',
+      error: error.message || 'Memory embedding recalculation failed',
+    });
+    res.end();
   }
 });
 
