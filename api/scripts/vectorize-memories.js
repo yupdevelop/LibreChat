@@ -353,7 +353,7 @@ function generateKey(fact, index) {
   return `auto_${prefix}_${index}`;
 }
 
-async function processUser(userId, personalization, Message, Conversation, MemoryEntry) {
+async function processUser(userId, tenantId, personalization, Message, Conversation, MemoryEntry) {
   stats.usersProcessed += 1;
   if (personalization?.vectorMemories === false) {
     console.log(`[VectorizeMemories] User ${userId}: vector memory disabled, skipping`);
@@ -464,7 +464,12 @@ async function processUser(userId, personalization, Message, Conversation, Memor
     stats.factsExtracted += facts.length;
     console.log(`[VectorizeMemories] User ${userId}: extracted ${facts.length} facts from ${convId}`);
 
-    const existingMemories = await MemoryEntry.find({ userId, embedding: { $exists: true, $ne: [] } })
+    const memoryFilter = { userId, ...(tenantId ? { tenantId } : {}) };
+
+  const existingMemories = await MemoryEntry.find({
+    ...memoryFilter,
+    embedding: { $exists: true, $ne: [] },
+  })
       .select('+embedding')
       .lean();
 
@@ -477,8 +482,15 @@ async function processUser(userId, personalization, Message, Conversation, Memor
         if (!embedding) {
           console.warn(`[VectorizeMemories] Failed to embed fact for user ${userId}, saving without embedding`);
           await MemoryEntry.findOneAndUpdate(
-            { userId, key },
-            { $set: { value: fact, tokenCount: Math.ceil(fact.length / 4), updated_at: new Date() } },
+            { ...memoryFilter, key },
+            {
+              $set: {
+                value: fact,
+                tokenCount: Math.ceil(fact.length / 4),
+                updated_at: new Date(),
+                ...(tenantId ? { tenantId } : {}),
+              },
+            },
             { upsert: true, new: true },
           );
           stats.factsSavedWithoutEmbedding += 1;
@@ -494,13 +506,14 @@ async function processUser(userId, personalization, Message, Conversation, Memor
         }
 
         await MemoryEntry.findOneAndUpdate(
-          { userId, key },
+          { ...memoryFilter, key },
           {
             $set: {
               value: fact,
               tokenCount: Math.ceil(fact.length / 4),
               embedding,
               updated_at: new Date(),
+              ...(tenantId ? { tenantId } : {}),
             },
           },
           { upsert: true, new: true },
@@ -544,7 +557,14 @@ async function main() {
 
   for (const user of users) {
     try {
-      await processUser(user._id.toString(), user.personalization, Message, Conversation, MemoryEntry);
+      await processUser(
+        user._id.toString(),
+        user.tenantId?.toString?.() || user.tenantId || '',
+        user.personalization,
+        Message,
+        Conversation,
+        MemoryEntry,
+      );
     } catch (err) {
       if (err.isQuota) {
         console.warn('[VectorizeMemories] Quota exceeded, stopping cycle early');
